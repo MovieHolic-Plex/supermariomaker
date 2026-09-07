@@ -1,10 +1,13 @@
 import { mountAudioGallery } from "./ui/audio-gallery";
+import { mountAssetGallery } from "./render/asset-gallery";
 
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing app mount");
 
 if (new URLSearchParams(location.search).get("qa") === "audio") {
   mountAudioGallery(app);
+} else if (new URLSearchParams(location.search).get("qa") === "assets") {
+  mountAssetGallery(app);
 } else {
   const canvas = document.createElement("canvas");
   canvas.width = 768;

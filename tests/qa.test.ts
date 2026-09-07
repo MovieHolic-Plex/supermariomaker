@@ -14,7 +14,12 @@ describe("QA command contract", () => {
     expect(parsed.scenarios.join(",")).toBe(scenario);
     expect(parsed.evidence).toBe("artifacts");
   });
-  test.each(["unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
+  test.each(["asset-sheet", "asset-missing", "asset-sheet,asset-missing", "boot,asset-sheet,audio-gallery,asset-missing"])("accepts asset integration %s", (scenario) => {
+    const parsed = options(["--scenario", scenario, "--evidence", "artifacts"]);
+    expect(parsed.scenarios.join(",")).toBe(scenario);
+    expect(parsed.evidence).toBe("artifacts");
+  });
+  test.each(["", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
   test("rejects missing required flags and misspelled flags", () => {
