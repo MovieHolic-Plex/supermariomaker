@@ -5,6 +5,7 @@ import { boot } from "./qa/boot";
 import { bootError } from "./qa/boot-error";
 import { audioGallery, audioBlocked } from "./qa/audio";
 import { assetSheet, assetMissing } from "./qa/assets";
+import { fixtureLoad, fixtureReject } from "./qa/fixtures";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -78,6 +79,8 @@ try {
       case "audio-blocked": await audioBlocked(directory, origin); break;
       case "asset-sheet": await assetSheet(directory, origin); break;
       case "asset-missing": await assetMissing(directory, origin, "/app.js"); break;
+      case "fixture-load": await fixtureLoad(directory, origin); break;
+      case "fixture-reject": await fixtureReject(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });
