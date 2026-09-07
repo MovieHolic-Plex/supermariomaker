@@ -27,5 +27,6 @@ form { max-width: 480px; margin-top: 24px; }
 label { display: block; margin-bottom: 8px; font-weight: 700; }
 input { width: 100%; min-height: 44px; padding: 8px 16px; border: 1px solid var(--border); background: var(--surface); color: inherit; margin-bottom: 16px; }
 .notice { border-inline-start: 4px solid var(--accent); background: var(--surface); padding: 16px 24px; margin-bottom: 24px; }
+.notice p, main[data-testid="error-dialog"] h1 { word-break: keep-all; overflow-wrap: anywhere; }
 .workspace canvas { display: block; width: 100%; height: auto; border: 1px dashed var(--border); background: var(--surface); image-rendering: pixelated; }
 [hidden] { display: none; }
