@@ -9,11 +9,13 @@ export function options(args: readonly string[]) {
     args: [...args], strict: true, allowPositionals: false,
     options: { scenario: { type: "string" }, evidence: { type: "string" } },
   });
-  assert(values.scenario && values.evidence, "Required: --scenario boot,boot-error --evidence DIR");
-  const scenarios = values.scenario.split(",");
-  for (const scenario of scenarios) {
-    assert(scenario === "boot" || scenario === "boot-error", `Unimplemented or unknown scenario: ${scenario}`);
-  }
+  assert(values.scenario && values.evidence, "Required: --scenario ID[,ID...] --evidence DIR");
+  const implemented = ["boot", "boot-error", "audio-gallery", "audio-blocked"] as const;
+  const scenarios = values.scenario.split(",").map((value) => {
+    const scenario = implemented.find((id) => id === value);
+    assert(scenario, `Unimplemented or unknown scenario: ${value}`);
+    return scenario;
+  });
   assert.equal(new Set(scenarios).size, scenarios.length, "Duplicate scenario");
   return { scenarios, evidence: values.evidence };
 }

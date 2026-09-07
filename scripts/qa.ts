@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { boot } from "./qa/boot";
 import { bootError } from "./qa/boot-error";
+import { audioGallery, audioBlocked } from "./qa/audio";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -72,7 +73,9 @@ try {
     switch (scenario) {
       case "boot": await boot(directory); break;
       case "boot-error": await bootError(directory); break;
-      default: throw new Error(`Unimplemented scenario: ${scenario}`);
+      case "audio-gallery": await audioGallery(directory, origin); break;
+      case "audio-blocked": await audioBlocked(directory, origin); break;
+      default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });
   }
@@ -94,7 +97,9 @@ try {
     await Promise.all([
       json(`${evidence}/actions.json`, { passed, scenarios, actions }),
       json(`${evidence}/cleanup.json`, { previewPid: preview?.pid ?? null, previewExit, port: 4173, portFree,
-        browserReceipts: scenarios.map((scenario) => `${scenario}/cleanup.json`) }),
+        browserReceipts: scenarios.flatMap((scenario) => scenario === "audio-blocked"
+          ? [`${scenario}/constructor/cleanup.json`, `${scenario}/resume/cleanup.json`]
+          : [`${scenario}/cleanup.json`]) }),
     ]);
   }
 }

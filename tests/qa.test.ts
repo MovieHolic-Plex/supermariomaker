@@ -8,7 +8,13 @@ describe("QA command contract", () => {
     expect(options(["--scenario", "boot,boot-error", "--evidence", "artifacts"]))
       .toEqual({ scenarios: ["boot", "boot-error"], evidence: "artifacts" });
   });
-  test.each(["unknown", "all", "boot,unknown", "boot,", "boot,boot"])("rejects unsupported scenario %s", (scenario) => {
+  test.each(["audio-gallery", "audio-blocked", "audio-gallery,audio-blocked", "boot,audio-gallery,boot-error,audio-blocked"])("accepts implemented audio integration %s", (scenario) => {
+    // Given real CLI IDs; when parsed; then route all audio scenarios in requested order.
+    const parsed = options(["--scenario", scenario, "--evidence", "artifacts"]);
+    expect(parsed.scenarios.join(",")).toBe(scenario);
+    expect(parsed.evidence).toBe("artifacts");
+  });
+  test.each(["unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
   test("rejects missing required flags and misspelled flags", () => {
