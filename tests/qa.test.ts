@@ -23,7 +23,10 @@ describe("QA command contract", () => {
     // Given real incremental scenario IDs; when parsed; then preserve routing order.
     expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
   });
-  test.each(["catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
+  test.each(["movement", "movement-edge", "movement,movement-edge", "boot,movement,fixture-load"]) ("accepts movement integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
+  test.each(["movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
   test("rejects missing required flags and misspelled flags", () => {

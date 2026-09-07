@@ -23,8 +23,14 @@ const remedies: Readonly<Record<ValidationCode, string>> = {
   goal_required: "필요한 목표를 코스에 배치해 주세요.",
 };
 
-/** Diagnostic-only route. The sole document replacement boundary is parseCourse(selected bytes). */
-export function mountFixtureGallery(root: HTMLElement): Readonly<{ dispose(): void }> {
+export interface FixtureGalleryOptions {
+  readonly purpose?: "movement";
+  /** Called only after the actual selected file passes the production parser and selection token. */
+  readonly onCourseLoaded?: (course: CourseV1) => void;
+  readonly onDispose?: () => void;
+}
+/** The sole document replacement boundary is parseCourse(selected bytes). Default route stays read-only. */
+export function mountFixtureGallery(root: HTMLElement, options: FixtureGalleryOptions = {}): Readonly<{ dispose(): void }> {
   const events = new AbortController();
   let course: CourseV1 | null = null;
   let selection = 0;
@@ -59,6 +65,11 @@ export function mountFixtureGallery(root: HTMLElement): Readonly<{ dispose(): vo
   `;
   panel.innerHTML = `<h1>코스 파일 진단</h1><p>파일을 검증하고 저장된 배치를 정지 화면으로 확인합니다. 편집 · 플레이 · 저장 기능은 제공하지 않습니다.</p>
     <div class="fixture-layout"><section aria-label="파일과 미리보기 설정"></section><figure><figcaption>256 × 240 논리 픽셀 · 2배 표시 · 숨은 블록과 워프 존은 진단용 표시입니다.</figcaption></figure></div>`;
+  if (options.purpose === "movement") {
+    const heading = panel.querySelector("h1"), description = panel.querySelector("p");
+    if (heading) heading.textContent = "이동 실험실 · 코스 파일";
+    if (description) description.textContent = "검증한 파일로 걷기 · 달리기 · 점프를 테스트합니다. 적, 아이템, 장치 동작, 수영과 코스 완료는 아직 제공하지 않습니다. 편집 · 저장은 지원하지 않습니다.";
+  }
   panel.prepend(style);
   const controls = panel.querySelector("section"), figure = panel.querySelector("figure");
   if (!controls || !figure) throw new Error("Fixture gallery structure missing");
@@ -144,7 +155,8 @@ export function mountFixtureGallery(root: HTMLElement): Readonly<{ dispose(): vo
         const option = document.createElement("option"); option.value = area.id; option.textContent = `${area.name} · ${area.theme}`; return option;
       }));
       areas.disabled = false; areas.value = course.mainAreaId; selectArea();
-      show("loaded", `${file.name} 검증 완료 · 정적 미리보기만 표시합니다.`);
+      options.onCourseLoaded?.(course);
+      show("loaded", `${file.name} 검증 완료 · ${options.purpose === "movement" ? "목표 없이 이동 테스트를 시작할 수 있습니다." : "정적 미리보기만 표시합니다."}`);
     } finally {
       root.dispatchEvent(new CustomEvent("fixture-read-settled", { bubbles: true, detail: { name: file.name, stale: disposed || token !== selection } }));
     }
@@ -156,6 +168,7 @@ export function mountFixtureGallery(root: HTMLElement): Readonly<{ dispose(): vo
   const dispose = () => {
     if (disposed) return;
     disposed = true; selection++; events.abort(); course = null; root.replaceChildren();
+    options.onDispose?.();
     root.dispatchEvent(new CustomEvent("fixture-cleanup", { bubbles: true, detail: { listenersAborted: events.signal.aborted, pendingReadsInvalidated: true } }));
   };
   on(exit, "click", dispose); on(window, "pagehide", dispose);
