@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="PC 브라우저에서 나만의 코스를 만드는 로컬 코스 메이커">
+    <title>슈퍼 마리오 코스 메이커</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div id="app"><main><h1>코스 메이커</h1><p role="status">작업실을 불러오는 중입니다.</p></main></div>
+    <noscript>JavaScript를 켠 뒤 새로고침해 주세요.</noscript>
+    <script type="module">
+      import("/app.js").catch((error) => {
+        console.error("Application load failed", error);
+        const panel = document.createElement("main");
+        panel.dataset.testid = "error-dialog";
+        panel.setAttribute("role", "alert");
+        const message = document.createElement("h1");
+        message.textContent = "작업실을 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.";
+        const retry = document.createElement("button");
+        retry.dataset.testid = "retry";
+        retry.textContent = "다시 시도";
+        retry.addEventListener("click", () => location.reload());
+        panel.append(message, retry);
+        document.getElementById("app").replaceChildren(panel);
+      });
+    </script>
+  </body>
+</html>
