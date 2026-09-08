@@ -3,11 +3,15 @@ import { currentArea } from "./state";
 import type { GameEvent, Runtime } from "./state";
 import { hasSolidOverlap, playerBounds, sweepAxis } from "./collision";
 import { PHYSICS, snapPosition } from "./physics";
+import { commitBlocks, interactBlocks } from "./blocks";
+import { collectItems, commitItems, firePlayer, updateItems } from "./items";
+import { advanceCombat } from "./player";
 
 /** One active 60Hz tick. Host must consume input edges once, never once per render. */
 export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   const player = runtime.player, area = currentArea(runtime), events: GameEvent[] = [];
   runtime.tick++;
+  advanceCombat(runtime, events);
   // 1. Input/player intent. Opposite axes are neutral; jump has no buffer or grace period.
   if (player.form === "small") player.crouched = false;
   else if (input.down.held && !input.up.held) player.crouched = true;
@@ -31,7 +35,10 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   const heldGravity = input.jump.held && rising && player.risingTicks < PHYSICS.heldTicks;
   player.vy = Math.min(PHYSICS.fallCap, player.vy + (heldGravity ? PHYSICS.heldGravity : PHYSICS.gravity));
   player.risingTicks = rising ? player.risingTicks + 1 : 0;
-  // 2. Actor intents (task 8/9). 3. Terrain movement: swept X, then swept Y.
+  if (input.run.pressed) firePlayer(runtime, events);
+  // 2. Existing actors only; input/block spawns remain queued until phase 5.
+  updateItems(runtime, events);
+  // 3. Terrain movement: swept X, then swept Y.
   const x = sweepAxis(area, playerBounds(player), player.vx, "x");
   player.x = snapPosition(player.x + x.distance);
   if (x.contacts.length) player.vx = 0;
@@ -41,6 +48,12 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   if (y.contacts.length) player.vy = 0;
   runtime.contacts = [...x.contacts, ...y.contacts];
   for (const contact of runtime.contacts) events.push({ type: "contact", tick: runtime.tick, contact });
-  // 4. Actor interactions, 5. queued terrain/spawns, 6. terminal conditions are later feature owners.
+  // 4. Interactions read this tick's terrain; growth cannot expand through solids.
+  interactBlocks(runtime, events);
+  collectItems(runtime, events);
+  // 5. Commit terrain and spawns. A new actor's first update is the following tick.
+  commitBlocks(runtime);
+  commitItems(runtime, events);
+  // 6. Terminal conditions and death UI/life consumption belong to task 14.
   return events;
 }

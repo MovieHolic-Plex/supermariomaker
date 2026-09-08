@@ -10,7 +10,7 @@ export function options(args: readonly string[]) {
     options: { scenario: { type: "string" }, evidence: { type: "string" } },
   });
   assert(values.scenario && values.evidence, "Required: --scenario ID[,ID...] --evidence DIR");
-  const implemented = ["boot", "boot-error", "audio-gallery", "audio-blocked", "asset-sheet", "asset-missing", "fixture-load", "fixture-reject", "movement", "movement-edge"] as const;
+  const implemented = ["boot", "boot-error", "audio-gallery", "audio-blocked", "asset-sheet", "asset-missing", "fixture-load", "fixture-reject", "movement", "movement-edge", "blocks", "blocks-edge"] as const;
   const scenarios = values.scenario.split(",").map((value) => {
     const scenario = implemented.find((id) => id === value);
     assert(scenario, `Unimplemented or unknown scenario: ${value}`);

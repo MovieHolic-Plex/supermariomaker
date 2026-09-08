@@ -7,6 +7,7 @@ import { audioGallery, audioBlocked } from "./qa/audio";
 import { assetSheet, assetMissing } from "./qa/assets";
 import { fixtureLoad, fixtureReject } from "./qa/fixtures";
 import { movement, movementEdge } from "./qa/movement";
+import { blocks, blocksEdge } from "./qa/blocks";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -84,6 +85,8 @@ try {
       case "fixture-reject": await fixtureReject(directory, origin); break;
       case "movement": await movement(directory, origin); break;
       case "movement-edge": await movementEdge(directory, origin); break;
+      case "blocks": await blocks(directory, origin); break;
+      case "blocks-edge": await blocksEdge(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

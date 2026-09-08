@@ -1,4 +1,4 @@
-# Movement runtime: task 6 integration contract
+# Movement, blocks and progression runtime: tasks 6-7 integration contract
 
 This is the `maker-smb1-v1` movement layer and a temporary movement lab, not a complete game.
 
@@ -6,18 +6,30 @@ This is the `maker-smb1-v1` movement layer and a temporary movement lab, not a c
 
 - `createRuntime(course, spawnOverride?)` validates small-player spawn clearance, copies the validated authored course, creates sparse runtime terrain, and starts tick 0 with seed `0x534d4231`. The host owns the explicit goal-free test permission. The engine never writes to its caller's `CourseV1`.
 - `step(runtime, inputFrame): GameEvent[]` advances exactly one active 60 Hz tick. No DOM, audio, storage, random clock, renderer or RAF is consulted. Input/player intent precedes swept X then Y terrain movement. The documented insertion points for actor intent, interactions, end-of-tick queued changes, and terminal conditions are in `step.ts`; they deliberately contain no fake feature implementations.
-- `snapshot(runtime)` returns detached, serializable tick/seed/area/player/contacts observations. It is not an authoring document or a setter. `currentArea(runtime)` resolves the active runtime area, not necessarily the course's main area.
+- `snapshot(runtime)` returns detached, serializable tick/seed/area/player/contacts, runtime areas/tiles, progress, combat, blocks and items observations. It is not an authoring document or a setter. `currentArea(runtime)` resolves the active runtime area, not necessarily the course's main area.
 - `RuntimeArea.source` is immutable authored metadata/static layout from the private copy. `RuntimeArea.tiles` is the live terrain Map, keyed by `y * source.width + x`. Block owners replace/delete runtime cells there, never in `source.tiles` or `runtime.course`. Future actor/platform owners integrate their actual state through this shared runtime rather than defining a second course/player model.
 
 ## Coordinates, collision and tuning
 
-Player x/y are bottom-center pixels; vx/vy are pixels per tick, not per second. Positions snap to 1/256 after each axis integration; velocities retain the profile's decimal precision. Small/tall/crouched colliders are 12x15 / 12x31 / 12x15. A blocked tall expansion retains crouch without moving the feet. Forms are present for these collider contracts; this task has no power-up acquisition or browser form setter.
+Player x/y are bottom-center pixels; vx/vy are pixels per tick, not per second. Positions snap to 1/256 after each axis integration; velocities retain the profile's decimal precision. Small/tall/crouched colliders are 12x15 / 12x31 / 12x15. A blocked tall expansion retains crouch without moving the feet. Real question/brick/hidden powerups now grant forms; there is no browser form setter.
 
 Horizontal intent uses 0.12 acceleration, 0.20 reversal braking, 0.10 neutral friction, and 1.6/2.8 walk/run caps. Jump begins at -5.2, then gravity applies in that same tick: 0.20 for at most 18 held rising ticks, otherwise 0.42. Release clamps upward vy to -2 before gravity. Fall cap is 6. No coyote time, buffered jump or held-key autojump.
 
-`playerBounds`, `sweepAxis`, `hasSolidOverlap`, and `colliders` are the shared terrain contact primitives. Sweep tests the entire displacement using a sparse tile broadphase. Contacts contain stable ID, source (`tile`, `object` body/bridge, or area `boundary`), axis, outward normal and normalized axis time. Every equal-time contact is retained and sorted by ID; event order is all X contacts, then all Y contacts. IDs for cells include area/y/x and do not change with tile kind. Coin is intangible; hidden terrain contacts only a sweep from below, without revealing it yet. Static catalog solid bodies/bridges participate; motion is task 9. Left/right/top area limits are solid. The bottom is not an invented floor: pit death/lives are task 14.
+`playerBounds`, `sweepAxis`, `hasSolidOverlap`, and `colliders` are the shared terrain contact primitives. Sweep tests the entire displacement using a sparse tile broadphase. Contacts contain stable ID, source (`tile`, `object` body/bridge, or area `boundary`), axis, outward normal and normalized axis time. Every equal-time contact is retained and sorted by ID; event order is all X contacts, then all Y contacts. IDs for cells include area/y/x and do not change with tile kind. Coin is intangible and collected on overlap; hidden terrain contacts only a sweep from below, revealing it through the block interaction phase. Static catalog solid bodies/bridges participate; motion is task 9. Left/right/top area limits are solid. The bottom is not an invented floor: pit death/lives are task 14.
 
-There are no actor updates, terrain mutations, spawns, damage or goal decisions in task 6. Their owners must preserve queued end-of-tick changes, new actors first updating next tick, stable-ID actor order, and lethal-before-goal precedence when those phases are implemented.
+## Blocks, items and progression (task 7)
+
+`Runtime.progress` starts at lives 3, score/coins 0. `Runtime.combat` explicitly stores starTicks, invulnerabilityTicks and defeated. `Runtime.blocks` stores per-stable-cell multiCoin remainder and queued tile replacements/deletions. `Runtime.items` stores actors, pending spawns and a monotonic ID counter. No feature state is hidden in closures or attached to authored objects.
+
+Step order is player intent/fire queue, existing item updates, swept player X then Y, block contacts and pickups, queued terrain commit, queued item commit. A spawned item is age 0 at tick T end and first updates at T+1. All equal-time contacts and actor updates use stable IDs. Course/source terrain never changes. MultiCoin grants exactly ten total, including revealed hidden containers; final hit changes to used. Empty questions/hidden become used; small only bumps an empty brick, super/fire break it for block score. All seven contents work in all three container kinds; powerup adapts at the hit, not later collection.
+
+Minor item motion defaults (not NES-exact claims): mushroom/1UP/star emerge upward at 1px/tick for 16 ticks with collection disabled; mushroom/1UP then walk right at 0.6px/tick, reverse on walls, gravity .42/fall cap6. Star walks at .6, gravity .2, floor bounce -3.4/fall cap6. Flower stays at its fully emerged position. Pickups are 14x14 bottom-center colliders. They persist outside the camera, removed below the area; area-inactive items suspend. Vine grows upward 1px/tick, at most96px, clipped by solid headroom at spawn; its y is base and height is current extent, width8. `itemBounds(vine)` exposes the actual climb region for task9; growth/art are real now, climbing is not implemented here.
+
+Fire uses a run/fire rising edge only in fire form, max2 live or queued player fireballs (across areas). Fireballs are 8x8, spawn beside the facing hand, vx +/-3/vy -1, gravity .2, floor bounce -2.5, expire on update180. Side/ceiling/embedded-solid contact removes them, as do area/256px-camera-margin escape. Queueing a projectile cannot make it update in the same tick. Enemy fire collisions are the task8 integration, not phantom targets.
+
+`player.ts` owns the sole `SCORE` table (coin200, block50, powerup1000, chain100/200/400/800/1000/2000/4000/8000 then life, goal5000). Coins wrap at100 and grant a life; 1UP grants a life with no extra score; mushroom/flower/star grant powerup score. `awardScore`, `awardChain` (zero-based kill index) and `grantLife` are typed later-enemy/goal seams; those owners control chain reset. Growth keeps feet anchored and crouches if tall clearance is blocked. Mushroom never downgrades an existing fire form; flower grants fire. Star pickup grants/resets600 active ticks; normal damage grants120 immunity ticks. Tick-start decrement means a pickup/hit on T retains its full duration at T end.
+
+`damagePlayer(runtime, {sourceId,kind}, events)` returns ignored/shrunk/defeated. Contact/projectile damage obeys star/immunity, fire->super->small->defeated. Crush/pit/timeout bypass protection. Defeat marks once and emits `playerDefeated`; it does not prematurely consume a life or invent death/retry UI. `removeItem(runtime,id,"combat",events)` consumes a projectile for the future enemy collision phase. `ProgressEvent`, `BlockEvent`, `ItemEvent`, `DamageHit`, `DamageResult`, `ProgressState` and `CombatState` are exported typed interfaces/unions, included in `GameEvent`. No inflight enemy/platform module is imported. Later owners must preserve queued changes, stable order and lethal-before-goal precedence.
 
 ## Input and host lifecycle
 
@@ -33,7 +45,7 @@ There are no actor updates, terrain mutations, spawns, damage or goal decisions 
 
 The lab provides explicit goal-free start, pause, resume, restart from the loaded original, and return to its unchanged file preview. It uses the existing pixel sprites and animation sequences with the active area's theme and a bounded 256x240 two-axis camera. `window.__qa` exists only on `qa=play`, exposing detached observations and bounded one-shot subscriptions; it has no setters. All subscriptions, listeners and RAF resources have disposal paths.
 
-Blocks/items/forms, enemy interactions, moving platforms, underwater movement, pipes, timers/lives/endings and the normal editor-to-play flow remain with tasks 7 onward. Underwater currently selects its correct artwork/theme, not swimming physics.
+The lab renders actual runtime block changes, pickups, vines, forms, star cycling, immunity flashing and fireballs, and reports real score/coins/lives/form/star ticks. Enemy interactions, moving platforms/climbing, underwater movement, pipes, timers/death/retry/endings and the normal editor-to-play flow remain with later tasks. Audio event mapping is task22; no sound or damage/powerup test button is fabricated. Underwater currently selects its correct artwork/theme, not swimming physics.
 
 ## Browser evidence
 

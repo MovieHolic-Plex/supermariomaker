@@ -50,7 +50,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   const start = document.createElement("button"); start.type = "button"; start.dataset["testid"] = "play-start"; start.textContent = "목표 없이 이동 테스트 시작"; start.disabled = true;
   const status = document.createElement("output"); status.dataset["testid"] = "play-status"; status.setAttribute("aria-live", "polite"); status.textContent = "아래에서 코스 파일을 선택해 주세요.";
   entry.append(style, start, status);
-  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · Shift / X 달리기 · Space / Z 점프 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>적 · 아이템 · 장치 동작 · 수영 · 완료 판정은 아직 없습니다.</p></section></div>`;
+  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · Shift / X 달리기·불꽃 · Space / Z 점프 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>블록 · 코인 · 버섯 · 꽃 · 스타 · 1UP · 덩굴 생성 · 불꽃 사용 가능<br>적 충돌 · 움직이는 장치 · 덩굴 타기 · 수영 · 타이머 · 완료 판정은 아직 없습니다.</p></section></div>`;
   const canvasSlot = panel.querySelector(".movement-layout > div"), controls = panel.querySelector("section");
   if (!canvasSlot || !controls) throw new Error("Movement layout missing");
   const canvas = document.createElement("canvas"); canvas.dataset["testid"] = "game-canvas"; canvas.tabIndex = 0; canvas.setAttribute("aria-label", "마리오 이동 테스트. 방향키와 스페이스로 조작합니다."); canvasSlot.append(canvas);
@@ -65,7 +65,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   const render = () => {
     if (runtime) {
       renderPlay(canvas, runtime);
-      hud.textContent = `${mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\nX ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}`;
+      hud.textContent = `${mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\nX ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}`;
     }
   };
   const cancelFrame = () => { if (raf !== null) cancelAnimationFrame(raf); raf = null; };

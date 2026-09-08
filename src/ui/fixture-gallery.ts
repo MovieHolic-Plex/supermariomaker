@@ -68,7 +68,7 @@ export function mountFixtureGallery(root: HTMLElement, options: FixtureGalleryOp
   if (options.purpose === "movement") {
     const heading = panel.querySelector("h1"), description = panel.querySelector("p");
     if (heading) heading.textContent = "이동 실험실 · 코스 파일";
-    if (description) description.textContent = "검증한 파일로 걷기 · 달리기 · 점프를 테스트합니다. 적, 아이템, 장치 동작, 수영과 코스 완료는 아직 제공하지 않습니다. 편집 · 저장은 지원하지 않습니다.";
+    if (description) description.textContent = "검증한 파일로 걷기 · 달리기 · 점프와 블록 · 아이템 동작을 테스트합니다. 적, 움직이는 장치, 수영과 코스 완료는 아직 제공하지 않습니다. 편집 · 저장은 지원하지 않습니다.";
   }
   panel.prepend(style);
   const controls = panel.querySelector("section"), figure = panel.querySelector("figure");

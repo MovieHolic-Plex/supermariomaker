@@ -30,6 +30,27 @@ export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
     drawPole(context, { x, y, heightCells: object.props.height }, options);
     drawSprite(context, { key: "decor.flag", x, y: y - object.props.height * 16 + 24 }, options);
   }
-  drawSprite(context, { ...view.player, x: view.player.x - view.camera.x, y: view.player.y - view.camera.y }, options);
+  for (const actor of runtime.items.actors) {
+    if (actor.areaId !== runtime.areaId) continue;
+    const x = actor.x - view.camera.x, y = actor.y - view.camera.y;
+    if (actor.kind === "vine") {
+      // Clip the final partial segment so visual growth matches the authoritative climb extent.
+      context.save(); context.beginPath(); context.rect(x - 8, y - actor.height, 16, actor.height); context.clip();
+      for (let offset = 0; offset < actor.height; offset += 16) drawSprite(context, { key: "decor.vineSegment", x, y: y - offset }, options);
+      if (actor.height > 0) drawSprite(context, { key: "decor.vineTop", x, y: y - actor.height + 16 }, options);
+      context.restore();
+    } else {
+      const key: AssetKey = actor.kind === "star" ? frameAt("item.star", runtime.tick) : actor.kind === "fireball" ? "item.fireball" : `item.${actor.kind}`;
+      context.save();
+      if (actor.emerging > 0) { context.beginPath(); context.rect(x - 8, y - 32, 16, 32 - actor.emerging); context.clip(); }
+      drawSprite(context, { key, x, y }, options); context.restore();
+    }
+  }
+  if (runtime.combat.invulnerabilityTicks === 0 || runtime.tick % 6 < 3) {
+    context.save();
+    if (runtime.combat.starTicks > 0) context.filter = `hue-rotate(${Math.floor(runtime.tick / 4) % 6 * 60}deg)`;
+    drawSprite(context, { ...view.player, x: view.player.x - view.camera.x, y: view.player.y - view.camera.y }, options);
+    context.restore();
+  }
   canvas.style.width = "512px"; canvas.style.height = "480px";
 }
