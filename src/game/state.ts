@@ -12,6 +12,10 @@ import { createClimbState } from "./climb";
 import type { ClimbEvent, ClimbState } from "./climb";
 import { createPlatformState } from "./platforms";
 import type { PlatformEvent, PlatformFeatureState } from "./platforms";
+import { createSpecialState } from "./enemies-special";
+import type { SpecialEvent, SpecialState } from "./enemies-special";
+import { createHazardState } from "./hazards";
+import type { HazardEvent, HazardState } from "./hazards";
 
 export interface PlayerState {
   /** Bottom-center, pixels. Velocity is pixels per authoritative tick. */
@@ -42,11 +46,13 @@ export interface Runtime {
   blocks: BlockState;
   items: ItemState;
   ground: GroundState;
+  special: SpecialState;
+  hazards: HazardState;
 }
 export type GameEvent =
   | Readonly<{ type: "jump"; tick: number }>
   | Readonly<{ type: "contact"; tick: number; contact: Contact }>
-  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent;
+  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent;
 
 /** Validates the spawn at this boundary. Goal-free permission belongs to the host's explicit action. */
 export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Runtime {
@@ -63,13 +69,17 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
     areaId: start.areaId, featureAreaId: start.areaId, tick: 0, seed: 0x534d4231,
     progress: { lives: 3, coins: 0, score: 0 }, combat: { starTicks: 0, invulnerabilityTicks: 0, defeated: false },
     blocks: { multiCoins: {}, pending: [] }, items: { actors: [], pending: [], nextId: 1 },
-    ground: { actors: new Map(), stompChain: 0 }, climb: createClimbState(),
+    ground: { actors: new Map(), stompChain: 0 },
+    special: { actors: new Map(), pending: [], nextId: 1, overloadedEnemies: false, overloadedProjectiles: false },
+    hazards: { actors: new Map(), pending: [], nextId: 1 }, climb: createClimbState(),
     player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0 }, contacts: [],
   };
   const support = sweepAxis(currentArea(runtime), playerBounds(runtime.player), 1 / PHYSICS.snap, "y");
   runtime.player.grounded = support.distance === 0 && support.contacts.length > 0;
   runtime.contacts = support.contacts;
   runtime.ground = createGroundState(runtime);
+  runtime.special = createSpecialState(runtime);
+  runtime.hazards = createHazardState(runtime);
   return runtime;
 }
 export function currentArea(runtime: Runtime): RuntimeArea {
@@ -92,6 +102,9 @@ export function snapshot(runtime: Runtime) {
     player: runtime.player, contacts: runtime.contacts, climb: runtime.climb, platforms: currentArea(runtime).platforms,
     progress: runtime.progress, combat: runtime.combat, blocks: runtime.blocks, items: runtime.items,
     ground: { actors: [...runtime.ground.actors.values()], stompChain: runtime.ground.stompChain },
+    special: { actors: [...runtime.special.actors.values()], pending: [...runtime.special.pending], nextId: runtime.special.nextId,
+      overloadedEnemies: runtime.special.overloadedEnemies, overloadedProjectiles: runtime.special.overloadedProjectiles },
+    hazards: { actors: [...runtime.hazards.actors.values()], pending: [...runtime.hazards.pending], nextId: runtime.hazards.nextId },
     areas: [...runtime.areas.values()].map(area => ({ id: area.source.id, tiles: [...area.tiles.values()], platforms: area.platforms })) });
 }
 export type RuntimeSnapshot = ReturnType<typeof snapshot>;

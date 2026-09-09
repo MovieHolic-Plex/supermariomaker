@@ -55,6 +55,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   if (!canvasSlot || !controls) throw new Error("Movement layout missing");
   const canvas = document.createElement("canvas"); canvas.dataset["testid"] = "game-canvas"; canvas.tabIndex = 0; canvas.setAttribute("aria-label", "마리오 이동 테스트. 방향키와 스페이스로 조작합니다."); canvasSlot.append(canvas);
   const hud = document.createElement("output"); hud.dataset["testid"] = "hud"; controls.append(hud);
+  const overload = document.createElement("output"); overload.dataset["testid"] = "spawn-overload"; overload.hidden = true; overload.textContent = "스폰 과부하"; controls.append(overload);
   const button = (id: string, text: string, action: () => void) => {
     const element = document.createElement("button"); element.type = "button"; element.dataset["testid"] = id; element.textContent = text;
     element.addEventListener("click", action, { signal: events.signal }); controls.append(element); return element;
@@ -65,7 +66,11 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   const render = () => {
     if (runtime) {
       renderPlay(canvas, runtime);
-      hud.textContent = `${runtime.combat.defeated ? "피격 · 처음부터 다시 눌러 재시작" : mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\nX ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}`;
+      const over = runtime.special.overloadedEnemies || runtime.special.overloadedProjectiles;
+      overload.hidden = !over;
+      overload.textContent = runtime.special.overloadedEnemies && runtime.special.overloadedProjectiles ? "스폰 과부하 · 적 128 · 발사체 128"
+        : runtime.special.overloadedEnemies ? "스폰 과부하 · 적 128" : "스폰 과부하 · 발사체 128";
+      hud.textContent = `${runtime.combat.defeated ? "피격 · 처음부터 다시 눌러 재시작" : mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\nX ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}${over ? " · 스폰 과부하" : ""}`;
     }
   };
   const cancelFrame = () => { if (raf !== null) cancelAnimationFrame(raf); raf = null; };

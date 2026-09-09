@@ -38,7 +38,10 @@ describe("QA command contract", () => {
   test.each(["platforms", "platforms-edge", "platforms,platforms-edge"]) ("accepts live platform integration %s", scenario => {
     expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
   });
-  test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish", "editor-shell,editor-shell", "editor-focus,editor-focus", "editor-shell,unknown", "editor-focus,unknown", "platforms,platforms", "platforms-edge,platforms-edge", "platforms,unknown", "platforms-edge,unknown"])("rejects unsupported scenario %s", (scenario) => {
+  test.each(["hazards", "hazards-edge", "hazards,hazards-edge"]) ("accepts live hazard integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
+  test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish", "editor-shell,editor-shell", "editor-focus,editor-focus", "editor-shell,unknown", "editor-focus,unknown", "platforms,platforms", "platforms-edge,platforms-edge", "platforms,unknown", "platforms-edge,unknown", "hazards,hazards", "hazards-edge,hazards-edge", "hazards,unknown", "hazards-edge,unknown"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
   test("rejects missing required flags and misspelled flags", () => {

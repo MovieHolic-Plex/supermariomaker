@@ -10,6 +10,10 @@ import { moveGroundEnemies, resolveGroundContacts } from "./enemies-ground";
 import { climbIntent, createClimbState } from "./climb";
 import { platformColliders, selectPlatformRider, stepPlatforms } from "./platforms";
 import type { PlatformMotion, PlatformTickResult } from "./platforms";
+import { commitSpecialSpawns, moveSpecialEnemies, resolveSpecialContacts } from "./enemies-special";
+import type { SpecialEvent } from "./enemies-special";
+import { commitHazardSpawns, moveHazards, resolveHazardContacts } from "./hazards";
+import type { HazardEvent } from "./hazards";
 
 /** One active 60Hz tick. Host must consume input edges once, never once per render. */
 export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
@@ -78,7 +82,14 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   if (!crushed) crushed = pushPlatformOverlaps(runtime, resolved.motions, riderId, events);
   // 2. Existing actors only; input/block spawns remain queued until phase 5.
   updateItems(runtime, events);
-  const groundFrame = moveGroundEnemies(runtime, runtime.ground, runtimeViewport(runtime));
+  const viewport = runtimeViewport(runtime);
+  const groundFrame = moveGroundEnemies(runtime, runtime.ground, viewport);
+  const specialMoved: SpecialEvent[] = [];
+  const specialFrame = moveSpecialEnemies(runtime, runtime.special, viewport, specialMoved);
+  for (const event of specialMoved) events.push(event);
+  const hazardMoved: HazardEvent[] = [];
+  const hazardFrame = moveHazards(runtime, runtime.hazards, viewport, hazardMoved);
+  for (const event of hazardMoved) events.push(event);
   // 3. Terrain movement: carry already applied; voluntary swept X, then swept Y.
   if (!crushed) {
     const x = sweepAxis(area, playerBounds(player), player.vx, "x");
@@ -97,14 +108,21 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   }
   // 4. Interactions read this tick's terrain; growth cannot expand through solids.
   if (!runtime.combat.defeated) {
-    const groundEvents = resolveGroundContacts(runtime, runtime.ground, groundFrame, {
-      previousPlayer, jumpHeld: input.jump.held, starActive: runtime.combat.starTicks > 0,
-      invulnerable: runtime.combat.invulnerabilityTicks > 0,
-      fireballs: runtime.items.actors.flatMap(actor => {
-        const previous = previousFireballs.get(actor.id);
-        return previous ? [{ id: actor.id, previous, bounds: itemBounds(actor) }] : [];
-      }),
+    const fireballs = runtime.items.actors.flatMap(actor => {
+      const previous = previousFireballs.get(actor.id);
+      return previous ? [{ id: actor.id, previous, bounds: itemBounds(actor) }] : [];
     });
+    const combat = {
+      previousPlayer, jumpHeld: input.jump.held, starActive: runtime.combat.starTicks > 0,
+      invulnerable: runtime.combat.invulnerabilityTicks > 0, fireballs,
+    };
+    const groundEvents = resolveGroundContacts(runtime, runtime.ground, groundFrame, combat);
+    const consumed = new Set(groundEvents.flatMap(event => event.type === "ground-fireball-contact" ? [event.fireballId] : []));
+    const remaining = fireballs.filter(fireball => !consumed.has(fireball.id));
+    const specialEvents = resolveSpecialContacts(runtime, runtime.special, specialFrame, { ...combat, fireballs: remaining });
+    const specialConsumed = new Set(specialEvents.flatMap(event => event.type === "special-fireball-contact" ? [event.fireballId] : []));
+    const leftover = remaining.filter(fireball => !specialConsumed.has(fireball.id));
+    const hazardEvents = resolveHazardContacts(runtime, runtime.hazards, hazardFrame, { ...combat, fireballs: leftover });
     let damaged = false;
     for (const event of groundEvents) {
       events.push(event);
@@ -115,12 +133,35 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
         case "shell-kicked": case "shell-woke": case "ground-despawned": break;
       }
     }
+    for (const event of specialEvents) {
+      events.push(event);
+      switch (event.type) {
+        case "special-stomp": case "special-defeated": awardChain(runtime, event.chain - 1, events); break;
+        case "special-fireball-contact": removeItem(runtime, event.fireballId, "combat", events); break;
+        case "special-damage":
+          if (!damaged) damaged = damagePlayer(runtime, { sourceId: event.actorId, kind: event.hit }, events) !== "ignored";
+          break;
+        default: break;
+      }
+    }
+    for (const event of hazardEvents) {
+      events.push(event);
+      switch (event.type) {
+        case "bowser-hit": removeItem(runtime, event.fireballId, "combat", events); break;
+        case "hazard-damage":
+          if (!damaged) damaged = damagePlayer(runtime, { sourceId: event.actorId, kind: event.hit }, events) !== "ignored";
+          break;
+        default: break;
+      }
+    }
     // Damage wins over a simultaneous pickup, including shrink followed by flower regrowth.
     if (!damaged) { interactBlocks(runtime, events); collectItems(runtime, events); }
   }
   // 5. Commit terrain and spawns. A new actor's first update is the following tick.
   commitBlocks(runtime);
   commitItems(runtime, events);
+  commitSpecialSpawns(runtime);
+  commitHazardSpawns(runtime);
   // 6. Terminal conditions and death UI/life consumption belong to task 14.
   return events;
 }

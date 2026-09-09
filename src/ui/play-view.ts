@@ -3,9 +3,12 @@ import type { AssetKey } from "../assets/manifest";
 import { currentArea, runtimeViewport } from "../game/state";
 import type { Runtime } from "../game/state";
 import { shellWiggling } from "../game/shells";
+import { firebarBalls } from "../game/hazards";
 import { canvasContext, drawSprite } from "../render/assets";
 import { drawPole, renderScene } from "../render/renderer";
 import { previewSprites } from "./course-preview";
+
+const HAMMER_THROW_POSE = 52;
 
 /** Presentation derives only from authoritative state. It never feeds positions back to simulation. */
 export function playView(runtime: Runtime) {
@@ -37,6 +40,36 @@ export function playView(runtime: Runtime) {
     return [{ id: actor.id, key, x: actor.x + (actor.kind === "shell" && wiggling ? Math.floor(actor.shell.idleTicks / 4) % 2 * 2 - 1 : 0),
       y: actor.y, flipX: actor.facing === 1, wiggling }];
   });
+  const special = [...runtime.special.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "piranha":
+        if (actor.phase === "hide") return [];
+        key = frameAt("enemy.piranha.bite", runtime.tick, 8); break;
+      case "billCannon": key = "enemy.cannon"; break;
+      case "bulletBill": key = "enemy.bullet"; break;
+      case "hammerBro": key = actor.throwTicks > HAMMER_THROW_POSE ? "enemy.hammerBro.throw" : frameAt("enemy.hammerBro.walk", runtime.tick, 8); break;
+      case "hammer": key = "item.hammer"; break;
+      case "lakitu": key = actor.cooldown > 172 ? "enemy.lakitu.throw" : "enemy.lakitu.ride"; break;
+      case "spinyEgg": key = "enemy.spiny.egg"; break;
+      case "spiny": key = frameAt("enemy.spiny.walk", runtime.tick, 8); break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
+  const hazards = [...runtime.hazards.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    if (actor.kind === "firebar") {
+      return firebarBalls(actor).map((ball, index) => ({ id: `${actor.id}:${index}`, key: "enemy.firebar" as AssetKey, x: ball.x, y: ball.y + 8, flipX: false }));
+    }
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "podoboo": key = actor.vy < 0 ? "enemy.podoboo.rise" : "enemy.podoboo.fall"; break;
+      case "bowser": key = actor.flameTicks > 112 ? "enemy.bowser.openMouth" : frameAt("enemy.bowser.walk", runtime.tick, 8); break;
+      case "bowserFlame": key = "enemy.bowser.flame"; break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
   const platforms = area.platforms.bodies.flatMap(body => {
     if (body.kind === "spring") {
       return [{ id: body.id, key: (body.compressedAt !== null ? "decor.springCompressed" : "decor.springExtended") as AssetKey,
@@ -46,13 +79,16 @@ export function playView(runtime: Runtime) {
     return Array.from({ length }, (_, cell) => ({ id: body.id, key: "decor.platform" as AssetKey,
       x: body.bounds.x + cell * 16 + 8, y: body.bounds.y + body.bounds.height }));
   });
-  return { camera, ground, platforms, theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
+  return { camera, ground, special, hazards, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
+    theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
   // Only play replaces authored ground actors and platform/spring bodies. Diagnostic/editor previews retain every object.
-  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
-  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera), ...view.platforms, ...view.ground] });
+  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && !runtime.special.actors.has(object.id)
+    && !runtime.hazards.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
+  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera),
+    ...view.platforms, ...view.ground, ...view.special, ...view.hazards] });
   const context = canvasContext(canvas), options = { theme: view.theme };
   for (const object of area.source.objects) if (object.kind === "flagGoal") {
     const x = object.x - view.camera.x, y = object.y - view.camera.y;
