@@ -17,6 +17,7 @@ import type { HazardEvent } from "./hazards";
 import { applyUnderwaterIntent, isUnderwater } from "./water";
 import { commitWaterSpawns, moveWaterEnemies, resolveWaterContacts } from "./enemies-water";
 import type { WaterEvent } from "./enemies-water";
+import { stepTransition } from "./transitions";
 
 /** One active 60Hz tick. Host must consume input edges once, never once per render. */
 export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
@@ -28,6 +29,8 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   const previousFireballs = new Map(runtime.items.actors.filter(actor => actor.kind === "fireball" && actor.areaId === runtime.areaId)
     .map(actor => [actor.id, itemBounds(actor)]));
   runtime.tick++;
+  const pipeEvents = stepTransition(runtime, input);
+  if (pipeEvents) return pipeEvents;
   advanceCombat(runtime, events);
   if (runtime.areaId !== runtime.featureAreaId) {
     const departed = runtime.areas.get(runtime.featureAreaId);

@@ -18,6 +18,8 @@ import { createHazardState } from "./hazards";
 import type { HazardEvent, HazardState } from "./hazards";
 import { createWaterState } from "./enemies-water";
 import type { WaterEvent, WaterState } from "./enemies-water";
+import { createTransitionState } from "./transitions";
+import type { TransitionEvent, TransitionState } from "./transitions";
 
 export interface PlayerState {
   /** Bottom-center, pixels. Velocity is pixels per authoritative tick. */
@@ -52,11 +54,13 @@ export interface Runtime {
   special: SpecialState;
   hazards: HazardState;
   water: WaterState;
+  transition: TransitionState;
 }
 export type GameEvent =
   | Readonly<{ type: "jump"; tick: number }>
   | Readonly<{ type: "contact"; tick: number; contact: Contact }>
-  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent | WaterEvent;
+  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent | WaterEvent
+  | TransitionEvent;
 
 /** Validates the spawn at this boundary. Goal-free permission belongs to the host's explicit action. */
 export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Runtime {
@@ -76,7 +80,7 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
     ground: { actors: new Map(), stompChain: 0 },
     special: { actors: new Map(), pending: [], nextId: 1, overloadedEnemies: false, overloadedProjectiles: false },
     hazards: { actors: new Map(), pending: [], nextId: 1 }, climb: createClimbState(),
-    water: { actors: new Map(), pending: [], nextId: 1 },
+    water: { actors: new Map(), pending: [], nextId: 1 }, transition: createTransitionState(),
     player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0, swimCooldown: 0 }, contacts: [],
   };
   const support = sweepAxis(currentArea(runtime), playerBounds(runtime.player), 1 / PHYSICS.snap, "y");
@@ -104,7 +108,7 @@ export function runtimeViewport(runtime: Runtime) {
 }
 /** Detached observation. No Maps, DOM objects, live references, setters or authoring writers. */
 export function snapshot(runtime: Runtime) {
-  return structuredClone({ tick: runtime.tick, seed: runtime.seed, areaId: runtime.areaId,
+  return structuredClone({ tick: runtime.tick, seed: runtime.seed, areaId: runtime.areaId, transition: runtime.transition,
     player: runtime.player, contacts: runtime.contacts, climb: runtime.climb, platforms: currentArea(runtime).platforms,
     progress: runtime.progress, combat: runtime.combat, blocks: runtime.blocks, items: runtime.items,
     ground: { actors: [...runtime.ground.actors.values()], stompChain: runtime.ground.stompChain },

@@ -6,7 +6,7 @@ import { shellWiggling } from "../game/shells";
 import { firebarBalls } from "../game/hazards";
 import { canvasContext, drawSprite } from "../render/assets";
 import { drawPole, renderScene } from "../render/renderer";
-import { previewSprites } from "./course-preview";
+import { drawWarpLabels, previewSprites, warpLabelMarks } from "./course-preview";
 
 const HAMMER_THROW_POSE = 52;
 
@@ -16,6 +16,7 @@ export function playView(runtime: Runtime) {
   const viewport = runtimeViewport(runtime), camera = { x: viewport.x, y: viewport.y };
   let key: AssetKey;
   if (runtime.combat.defeated) key = "mario.small.death";
+  else if (runtime.transition.kind === "pipe" && player.form !== "small") key = `mario.${player.form}.crouch`;
   else if (runtime.climb.vineId !== null) key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
   else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
   else if (area.source.theme === "underwater") key = frameAt(`mario.${player.form}.swim`, runtime.tick, 8);
@@ -90,7 +91,8 @@ export function playView(runtime: Runtime) {
       x: body.bounds.x + cell * 16 + 8, y: body.bounds.y + body.bounds.height }));
   });
   return { camera, ground, special, hazards, water, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
-    theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
+    theme: area.source.theme, areaName: area.source.name, warpLabels: warpLabelMarks(runtime.course, area.source),
+    player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
@@ -127,5 +129,6 @@ export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
     drawSprite(context, { ...view.player, x: view.player.x - view.camera.x, y: view.player.y - view.camera.y }, options);
     context.restore();
   }
+  drawWarpLabels(context, runtime.course, area.source, view.camera);
   canvas.style.width = "512px"; canvas.style.height = "480px";
 }

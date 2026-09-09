@@ -1,13 +1,15 @@
 import { attachInput, EMPTY_INPUT } from "../input";
 import type { InputFrame, PauseReason } from "../input";
 import { FixedClock } from "../game/clock";
-import { createRuntime, snapshot } from "../game/state";
+import { createRuntime, currentArea, snapshot } from "../game/state";
 import type { GameEvent, Runtime, RuntimeSnapshot } from "../game/state";
 import { step } from "../game/step";
 import type { CourseV1 } from "../level/types";
 import { validatePreview } from "../level/validate";
 import { mountFixtureGallery } from "./fixture-gallery";
 import { playView, renderPlay } from "./play-view";
+
+const currentAreaName = (runtime: Runtime) => currentArea(runtime).source.name;
 
 export interface PlayObservation {
   readonly mode: "READY" | "PLAYING" | "PAUSED";
@@ -70,7 +72,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
       overload.hidden = !over;
       overload.textContent = runtime.special.overloadedEnemies && runtime.special.overloadedProjectiles ? "스폰 과부하 · 적 128 · 발사체 128"
         : runtime.special.overloadedEnemies ? "스폰 과부하 · 적 128" : "스폰 과부하 · 발사체 128";
-      hud.textContent = `${runtime.combat.defeated ? "피격 · 처음부터 다시 눌러 재시작" : mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\nX ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}${over ? " · 스폰 과부하" : ""}`;
+      hud.textContent = `${runtime.combat.defeated ? "피격 · 처음부터 다시 눌러 재시작" : mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\n영역 ${currentAreaName(runtime)} · X ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}${over ? " · 스폰 과부하" : ""}`;
     }
   };
   const cancelFrame = () => { if (raf !== null) cancelAnimationFrame(raf); raf = null; };

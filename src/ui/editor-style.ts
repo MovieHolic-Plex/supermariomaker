@@ -77,5 +77,8 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-status { display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid #c8ccc5; background:var(--ed-paper); padding:0 20px; font-size:12px; }
 .editor-status-note { color:#8f4228; }
 .editor-status output { font:12px/1.5 "Malgun Gothic",monospace; color:var(--ed-muted); white-space:nowrap; }
+.editor-area-actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.editor-inspector label { display:block; margin:8px 0; font-size:12px; }
+.editor-inspector output { display:block; margin:8px 0; min-height:44px; padding:10px; background:#f7eedc; }
 @media(min-width:1600px) { .editor-workspace { grid-template-columns:240px minmax(0,1fr) 280px; gap:18px; padding:18px 20px; } .editor-palette-list button { min-height:64px; } }
 `;

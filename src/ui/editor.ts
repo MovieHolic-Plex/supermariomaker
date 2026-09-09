@@ -8,7 +8,7 @@ import { canvasContext } from "../render/assets";
 import { GAME_VIEWPORT } from "../render/renderer";
 import { renderCoursePreview } from "./course-preview";
 import { EDITOR_CSS } from "./editor-style";
-import { catalogIcon, EDITOR_CATALOG, EDITOR_THEMES, renderInspector, type PaletteKind } from "./inspector";
+import { catalogIcon, EDITOR_CATALOG, EDITOR_THEMES, renderInspector, type InspectorHost, type PaletteKind } from "./inspector";
 import { createToolbar } from "./toolbar";
 
 export interface EditorViewState {
@@ -64,6 +64,17 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   if (!window) throw new Error("Editor view requires a window");
   const events = new AbortController(), listener = { signal: events.signal };
   let history: EditorHistory = createHistory(options.course);
+  const inspectorHost: InspectorHost = {
+    get history() { return history; },
+    createId: () => globalThis.crypto.randomUUID(),
+    onCommitted(selectAreaId) {
+      lastOutcome = "committed";
+      course = history.document();
+      if (selectAreaId && course.areas.some(item => item.id === selectAreaId)) area = selectedArea(selectAreaId);
+      applyDocument(); render("command");
+    },
+    onRejected() { lastOutcome = "rejected"; syncHistory(); renderInspector(inspector, course, area, kind, inspectorHost); render("command"); },
+  };
   let course = history.document();
   let area: AreaV1 = selectedArea(course.mainAreaId);
   let view: Viewport = options.viewport ?? { x: -16, y: -16, zoom: 2 };
@@ -145,7 +156,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   }
   function applyDocument(): void {
     course = history.document(); area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
-    chunks.clear(); syncHistory(); renderInspector(inspector, course, area, kind);
+    chunks.clear(); updateAreas(); updatePalette(); syncHistory(); renderInspector(inspector, course, area, kind, inspectorHost);
   }
   function undo(): void {
     cancelPaint(); if (!history.undo()) return; lastOutcome = null; applyDocument(); render("undo");
@@ -184,7 +195,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       button.addEventListener("click", () => {
         kind = id;
         for (const item of list.querySelectorAll("button")) item.setAttribute("aria-pressed", String(item === button));
-        renderInspector(inspector, course, area, kind); options.onPalettePreview?.(kind); publish("palette");
+        renderInspector(inspector, course, area, kind, inspectorHost); options.onPalettePreview?.(kind); publish("palette");
       }, listener);
       return button;
     }));
@@ -313,9 +324,9 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   canvas.addEventListener("blur", clearInput, listener); window.addEventListener("blur", clearInput, listener);
   document.addEventListener("visibilitychange", () => { if (document.hidden) clearInput(); }, listener);
   window.addEventListener("resize", resize, listener);
-  areas.addEventListener("change", () => { clearInput(); area = selectedArea(areas.value); chunks.clear(); updatePalette(); renderInspector(inspector, course, area, kind); home(); }, listener);
+  areas.addEventListener("change", () => { clearInput(); area = selectedArea(areas.value); chunks.clear(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); home(); }, listener);
   const observer = new ResizeObserver(resize); observer.observe(wrap);
-  updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); syncHistory(); toolbar.setTool(tool); resize();
+  updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); syncHistory(); toolbar.setTool(tool); resize();
   if (!options.viewport) home();
   function dispose(): void {
     if (disposed) return;
@@ -327,7 +338,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       clearInput(); history = createHistory(next); course = history.document();
       area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
       titleDraft = course.title; toolbar.setTitle(course.title); lastOutcome = null; chunks.clear();
-      updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); syncHistory(); render("course");
+      updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); syncHistory(); render("course");
     },
     setViewport(next) { clearInput(); view = { ...next }; render("viewport"); }, dispose,
   };
