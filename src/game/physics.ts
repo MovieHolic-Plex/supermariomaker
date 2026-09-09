@@ -4,5 +4,6 @@ export const PHYSICS = {
   acceleration: 0.12, reversal: 0.20, friction: 0.10, walkCap: 1.6, runCap: 2.8,
   jump: -5.2, heldGravity: 0.20, heldTicks: 18, gravity: 0.42, fallCap: 6, releaseClamp: -2,
   width: 12, smallHeight: 15, tallHeight: 31,
+  water: { acceleration: 0.08, cap: 1.4, gravity: 0.10, fallCap: 2.2, swim: -2.6, cooldown: 12 },
 } as const;
 export const snapPosition = (value: number): number => Math.round(value * PHYSICS.snap) / PHYSICS.snap;

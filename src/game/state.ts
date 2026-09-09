@@ -16,6 +16,8 @@ import { createSpecialState } from "./enemies-special";
 import type { SpecialEvent, SpecialState } from "./enemies-special";
 import { createHazardState } from "./hazards";
 import type { HazardEvent, HazardState } from "./hazards";
+import { createWaterState } from "./enemies-water";
+import type { WaterEvent, WaterState } from "./enemies-water";
 
 export interface PlayerState {
   /** Bottom-center, pixels. Velocity is pixels per authoritative tick. */
@@ -23,6 +25,7 @@ export interface PlayerState {
   form: "small" | "super" | "fire";
   crouched: boolean; grounded: boolean; facing: -1 | 1; skidding: boolean;
   risingTicks: number;
+  swimCooldown: number;
 }
 export interface RuntimeArea {
   readonly source: AreaV1;
@@ -48,11 +51,12 @@ export interface Runtime {
   ground: GroundState;
   special: SpecialState;
   hazards: HazardState;
+  water: WaterState;
 }
 export type GameEvent =
   | Readonly<{ type: "jump"; tick: number }>
   | Readonly<{ type: "contact"; tick: number; contact: Contact }>
-  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent;
+  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent | WaterEvent;
 
 /** Validates the spawn at this boundary. Goal-free permission belongs to the host's explicit action. */
 export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Runtime {
@@ -72,7 +76,8 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
     ground: { actors: new Map(), stompChain: 0 },
     special: { actors: new Map(), pending: [], nextId: 1, overloadedEnemies: false, overloadedProjectiles: false },
     hazards: { actors: new Map(), pending: [], nextId: 1 }, climb: createClimbState(),
-    player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0 }, contacts: [],
+    water: { actors: new Map(), pending: [], nextId: 1 },
+    player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0, swimCooldown: 0 }, contacts: [],
   };
   const support = sweepAxis(currentArea(runtime), playerBounds(runtime.player), 1 / PHYSICS.snap, "y");
   runtime.player.grounded = support.distance === 0 && support.contacts.length > 0;
@@ -80,6 +85,7 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
   runtime.ground = createGroundState(runtime);
   runtime.special = createSpecialState(runtime);
   runtime.hazards = createHazardState(runtime);
+  runtime.water = createWaterState(runtime);
   return runtime;
 }
 export function currentArea(runtime: Runtime): RuntimeArea {
@@ -105,6 +111,7 @@ export function snapshot(runtime: Runtime) {
     special: { actors: [...runtime.special.actors.values()], pending: [...runtime.special.pending], nextId: runtime.special.nextId,
       overloadedEnemies: runtime.special.overloadedEnemies, overloadedProjectiles: runtime.special.overloadedProjectiles },
     hazards: { actors: [...runtime.hazards.actors.values()], pending: [...runtime.hazards.pending], nextId: runtime.hazards.nextId },
+    water: { actors: [...runtime.water.actors.values()], pending: [...runtime.water.pending], nextId: runtime.water.nextId },
     areas: [...runtime.areas.values()].map(area => ({ id: area.source.id, tiles: [...area.tiles.values()], platforms: area.platforms })) });
 }
 export type RuntimeSnapshot = ReturnType<typeof snapshot>;

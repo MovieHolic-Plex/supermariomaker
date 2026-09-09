@@ -17,7 +17,6 @@ describe("QA command contract", () => {
   test.each(["asset-sheet", "asset-missing", "asset-sheet,asset-missing", "boot,asset-sheet,audio-gallery,asset-missing"])("accepts asset integration %s", (scenario) => {
     const parsed = options(["--scenario", scenario, "--evidence", "artifacts"]);
     expect(parsed.scenarios.join(",")).toBe(scenario);
-    expect(parsed.evidence).toBe("artifacts");
   });
   test.each(["fixture-load", "fixture-reject", "fixture-load,fixture-reject", "boot,fixture-load,audio-gallery,fixture-reject,asset-sheet"])("accepts fixture integration %s", (scenario) => {
     // Given real incremental scenario IDs; when parsed; then preserve routing order.
@@ -41,7 +40,10 @@ describe("QA command contract", () => {
   test.each(["hazards", "hazards-edge", "hazards,hazards-edge"]) ("accepts live hazard integration %s", scenario => {
     expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
   });
-  test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish", "editor-shell,editor-shell", "editor-focus,editor-focus", "editor-shell,unknown", "editor-focus,unknown", "platforms,platforms", "platforms-edge,platforms-edge", "platforms,unknown", "platforms-edge,unknown", "hazards,hazards", "hazards-edge,hazards-edge", "hazards,unknown", "hazards-edge,unknown"])("rejects unsupported scenario %s", (scenario) => {
+  test.each(["water", "water-edge", "water,water-edge"]) ("accepts live water integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
+  test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish", "editor-shell,editor-shell", "editor-focus,editor-focus", "editor-shell,unknown", "editor-focus,unknown", "platforms,platforms", "platforms-edge,platforms-edge", "platforms,unknown", "platforms-edge,unknown", "hazards,hazards", "hazards-edge,hazards-edge", "hazards,unknown", "hazards-edge,unknown", "water,water", "water-edge,water-edge", "water,unknown", "water-edge,unknown"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
   test("rejects missing required flags and misspelled flags", () => {

@@ -18,6 +18,7 @@ export function playView(runtime: Runtime) {
   if (runtime.combat.defeated) key = "mario.small.death";
   else if (runtime.climb.vineId !== null) key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
   else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
+  else if (area.source.theme === "underwater") key = frameAt(`mario.${player.form}.swim`, runtime.tick, 8);
   else if (!player.grounded) key = `mario.${player.form}.jump`;
   else if (player.skidding) key = `mario.${player.form}.skid`;
   else if (player.vx !== 0) key = frameAt(`mario.${player.form}.run`, runtime.tick, 6);
@@ -70,6 +71,15 @@ export function playView(runtime: Runtime) {
     }
     return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
   });
+  const water = [...runtime.water.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "cheep": key = frameAt(`enemy.cheep.${actor.color}.swim`, runtime.tick, 8); break;
+      case "blooper": key = frameAt("enemy.blooper.swim", runtime.tick, 8); break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
   const platforms = area.platforms.bodies.flatMap(body => {
     if (body.kind === "spring") {
       return [{ id: body.id, key: (body.compressedAt !== null ? "decor.springCompressed" : "decor.springExtended") as AssetKey,
@@ -79,16 +89,16 @@ export function playView(runtime: Runtime) {
     return Array.from({ length }, (_, cell) => ({ id: body.id, key: "decor.platform" as AssetKey,
       x: body.bounds.x + cell * 16 + 8, y: body.bounds.y + body.bounds.height }));
   });
-  return { camera, ground, special, hazards, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
+  return { camera, ground, special, hazards, water, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
     theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
   // Only play replaces authored ground actors and platform/spring bodies. Diagnostic/editor previews retain every object.
   const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && !runtime.special.actors.has(object.id)
-    && !runtime.hazards.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
+    && !runtime.hazards.actors.has(object.id) && !runtime.water.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
   renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera),
-    ...view.platforms, ...view.ground, ...view.special, ...view.hazards] });
+    ...view.platforms, ...view.ground, ...view.special, ...view.hazards, ...view.water] });
   const context = canvasContext(canvas), options = { theme: view.theme };
   for (const object of area.source.objects) if (object.kind === "flagGoal") {
     const x = object.x - view.camera.x, y = object.y - view.camera.y;

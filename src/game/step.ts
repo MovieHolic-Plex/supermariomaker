@@ -14,6 +14,9 @@ import { commitSpecialSpawns, moveSpecialEnemies, resolveSpecialContacts } from 
 import type { SpecialEvent } from "./enemies-special";
 import { commitHazardSpawns, moveHazards, resolveHazardContacts } from "./hazards";
 import type { HazardEvent } from "./hazards";
+import { applyUnderwaterIntent, isUnderwater } from "./water";
+import { commitWaterSpawns, moveWaterEnemies, resolveWaterContacts } from "./enemies-water";
+import type { WaterEvent } from "./enemies-water";
 
 /** One active 60Hz tick. Host must consume input edges once, never once per render. */
 export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
@@ -34,6 +37,7 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
     }
     runtime.climb = createClimbState();
     runtime.contacts = [];
+    runtime.player.swimCooldown = 0;
     runtime.featureAreaId = runtime.areaId;
   }
   const area = currentArea(runtime);
@@ -45,6 +49,8 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   // 1. Input/player intent. Opposite axes are neutral; jump has no buffer or grace period.
   if (climb.kind === "climb") {
     player.vx = 0; player.vy = climb.dy; player.skidding = false; player.risingTicks = 0;
+  } else if (isUnderwater(runtime)) {
+    applyUnderwaterIntent(runtime, input, events);
   } else {
     if (player.form === "small") player.crouched = false;
     else if (input.down.held && !input.up.held) player.crouched = true;
@@ -90,6 +96,9 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   const hazardMoved: HazardEvent[] = [];
   const hazardFrame = moveHazards(runtime, runtime.hazards, viewport, hazardMoved);
   for (const event of hazardMoved) events.push(event);
+  const waterMoved: WaterEvent[] = [];
+  const waterFrame = moveWaterEnemies(runtime, runtime.water, viewport, waterMoved);
+  for (const event of waterMoved) events.push(event);
   // 3. Terrain movement: carry already applied; voluntary swept X, then swept Y.
   if (!crushed) {
     const x = sweepAxis(area, playerBounds(player), player.vx, "x");
@@ -123,6 +132,9 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
     const specialConsumed = new Set(specialEvents.flatMap(event => event.type === "special-fireball-contact" ? [event.fireballId] : []));
     const leftover = remaining.filter(fireball => !specialConsumed.has(fireball.id));
     const hazardEvents = resolveHazardContacts(runtime, runtime.hazards, hazardFrame, { ...combat, fireballs: leftover });
+    const hazardConsumed = new Set(hazardEvents.flatMap(event => event.type === "bowser-hit" ? [event.fireballId] : []));
+    const waterLeftover = leftover.filter(fireball => !hazardConsumed.has(fireball.id));
+    const waterEvents = resolveWaterContacts(runtime, runtime.water, waterFrame, { ...combat, fireballs: waterLeftover });
     let damaged = false;
     for (const event of groundEvents) {
       events.push(event);
@@ -154,6 +166,17 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
         default: break;
       }
     }
+    for (const event of waterEvents) {
+      events.push(event);
+      switch (event.type) {
+        case "water-stomp": case "water-defeated": awardChain(runtime, event.chain - 1, events); break;
+        case "water-fireball-contact": removeItem(runtime, event.fireballId, "combat", events); break;
+        case "water-damage":
+          if (!damaged) damaged = damagePlayer(runtime, { sourceId: event.actorId, kind: event.hit }, events) !== "ignored";
+          break;
+        default: break;
+      }
+    }
     // Damage wins over a simultaneous pickup, including shrink followed by flower regrowth.
     if (!damaged) { interactBlocks(runtime, events); collectItems(runtime, events); }
   }
@@ -162,6 +185,7 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   commitItems(runtime, events);
   commitSpecialSpawns(runtime);
   commitHazardSpawns(runtime);
+  commitWaterSpawns(runtime);
   // 6. Terminal conditions and death UI/life consumption belong to task 14.
   return events;
 }

@@ -12,6 +12,7 @@ import { enemiesGround, enemiesGroundEdge } from "./qa/enemies-ground";
 import { editorShellScenario, editorFocusScenario } from "./qa/editor";
 import { platforms, platformsEdge } from "./qa/platforms";
 import { hazards, hazardsEdge } from "./qa/hazards";
+import { water, waterEdge } from "./qa/water";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -99,6 +100,8 @@ try {
       case "platforms-edge": await platformsEdge(directory, origin); break;
       case "hazards": await hazards(directory, origin); break;
       case "hazards-edge": await hazardsEdge(directory, origin); break;
+      case "water": await water(directory, origin); break;
+      case "water-edge": await waterEdge(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });
