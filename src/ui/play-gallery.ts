@@ -50,7 +50,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   const start = document.createElement("button"); start.type = "button"; start.dataset["testid"] = "play-start"; start.textContent = "목표 없이 이동 테스트 시작"; start.disabled = true;
   const status = document.createElement("output"); status.dataset["testid"] = "play-status"; status.setAttribute("aria-live", "polite"); status.textContent = "아래에서 코스 파일을 선택해 주세요.";
   entry.append(style, start, status);
-  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · Shift / X 달리기·불꽃 · Space / Z 점프 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>블록 · 아이템 · 지상 적 밟기 · 등껍질 연속 공격 · 불꽃 사용 가능<br>움직이는 장치 · 덩굴 타기 · 수영 · 타이머 · 완료 판정은 아직 없습니다.</p></section></div>`;
+  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · ↑ 덩굴 · Shift / X 달리기·불꽃 · Space / Z 점프 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>블록 · 아이템 · 지상 적 밟기 · 등껍질 연속 공격 · 불꽃 사용 가능<br>움직이는 발판 · 스프링 · 덩굴 타기 가능 · 수영 · 타이머 · 완료 판정은 아직 없습니다.</p></section></div>`;
   const canvasSlot = panel.querySelector(".movement-layout > div"), controls = panel.querySelector("section");
   if (!canvasSlot || !controls) throw new Error("Movement layout missing");
   const canvas = document.createElement("canvas"); canvas.dataset["testid"] = "game-canvas"; canvas.tabIndex = 0; canvas.setAttribute("aria-label", "마리오 이동 테스트. 방향키와 스페이스로 조작합니다."); canvasSlot.append(canvas);

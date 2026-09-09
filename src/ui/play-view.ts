@@ -13,6 +13,7 @@ export function playView(runtime: Runtime) {
   const viewport = runtimeViewport(runtime), camera = { x: viewport.x, y: viewport.y };
   let key: AssetKey;
   if (runtime.combat.defeated) key = "mario.small.death";
+  else if (runtime.climb.vineId !== null) key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
   else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
   else if (!player.grounded) key = `mario.${player.form}.jump`;
   else if (player.skidding) key = `mario.${player.form}.skid`;
@@ -36,13 +37,22 @@ export function playView(runtime: Runtime) {
     return [{ id: actor.id, key, x: actor.x + (actor.kind === "shell" && wiggling ? Math.floor(actor.shell.idleTicks / 4) % 2 * 2 - 1 : 0),
       y: actor.y, flipX: actor.facing === 1, wiggling }];
   });
-  return { camera, ground, theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
+  const platforms = area.platforms.bodies.flatMap(body => {
+    if (body.kind === "spring") {
+      return [{ id: body.id, key: (body.compressedAt !== null ? "decor.springCompressed" : "decor.springExtended") as AssetKey,
+        x: body.bounds.x + body.bounds.width / 2, y: body.bounds.y + body.bounds.height }];
+    }
+    const length = body.bounds.width / 16;
+    return Array.from({ length }, (_, cell) => ({ id: body.id, key: "decor.platform" as AssetKey,
+      x: body.bounds.x + cell * 16 + 8, y: body.bounds.y + body.bounds.height }));
+  });
+  return { camera, ground, platforms, theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
-  // Only play replaces authored ground actors. The diagnostic/editor previews retain every object.
-  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id));
-  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera), ...view.ground] });
+  // Only play replaces authored ground actors and platform/spring bodies. Diagnostic/editor previews retain every object.
+  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
+  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera), ...view.platforms, ...view.ground] });
   const context = canvasContext(canvas), options = { theme: view.theme };
   for (const object of area.source.objects) if (object.kind === "flagGoal") {
     const x = object.x - view.camera.x, y = object.y - view.camera.y;
