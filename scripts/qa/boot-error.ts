@@ -96,7 +96,7 @@ export async function bootError(evidence: string) {
               await page.getByTestId("course-title").fill("첫 코스");
               await page.getByTestId("create-course").click();
               assert.equal(await page.getByTestId("editor-canvas").isVisible(), true);
-              assert.equal(await page.locator(".workspace h1").textContent(), "첫 코스");
+              assert.equal(await page.getByTestId("course-title").inputValue(), "첫 코스");
               assert.equal(await page.getByTestId("error-dialog").isVisible(), true);
           }
         }

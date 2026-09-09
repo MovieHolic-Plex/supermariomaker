@@ -2,6 +2,9 @@ import { mountAudioGallery } from "./ui/audio-gallery";
 import { mountAssetGallery } from "./render/asset-gallery";
 import { mountFixtureGallery } from "./ui/fixture-gallery";
 import { mountPlayGallery } from "./ui/play-gallery";
+import { createNewCourse } from "./level/catalog";
+import { validateCourse } from "./level/validate";
+import { mountNormalEditor } from "./ui/editor-gallery";
 
 const app = document.getElementById("app");
 if (!app) throw new Error("Missing app mount");
@@ -15,12 +18,9 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
 } else if (new URLSearchParams(location.search).get("qa") === "fixture") {
   mountFixtureGallery(app);
 } else {
-  const canvas = document.createElement("canvas");
-  canvas.width = 768;
-  canvas.height = 320;
-  canvas.dataset["testid"] = "editor-canvas";
-  canvas.setAttribute("aria-label", "편집 작업 영역 — 편집 도구는 아직 준비 중입니다");
-  const context = canvas.getContext("2d");
+  const context = document.createElement("canvas").getContext("2d");
+  const editorAvailable = context && typeof structuredClone === "function"
+    && typeof ResizeObserver === "function" && typeof globalThis.crypto?.randomUUID === "function";
   let storageAvailable = false;
   try {
     storageAvailable = typeof globalThis.indexedDB !== "undefined";
@@ -35,16 +35,16 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
   const main = document.createElement("main");
   app.replaceChildren(header, main);
 
-  if (!context || !storageAvailable || !audioAvailable || typeof structuredClone !== "function") {
+  if (!editorAvailable || !storageAvailable || !audioAvailable) {
     const alert = document.createElement("section");
     alert.className = "notice";
     alert.dataset["testid"] = "error-dialog";
     alert.setAttribute("role", "alert");
     const message = document.createElement("p");
-    message.textContent = !context || typeof structuredClone !== "function"
+    message.textContent = !editorAvailable
       ? "필수 브라우저 기능을 사용할 수 없습니다. 최신 Chrome, Edge 또는 Firefox에서 열어 주세요."
       : !storageAvailable
-        ? "로컬 저장 불가: 브라우저의 사이트 저장 권한을 확인해 주세요. 이 기초 버전에서는 제목 입력과 작업실 열기만 가능합니다."
+        ? "로컬 저장 불가: 사이트 저장 권한을 확인해 주세요. 메모리에서 코스를 볼 수 있지만 저장과 내보내기는 아직 지원하지 않습니다."
         : "소리 기능을 사용할 수 없습니다. 최신 브라우저에서 다시 열어 주세요. 작업실은 계속 사용할 수 있습니다.";
     const retry = document.createElement("button");
     retry.dataset["testid"] = "retry";
@@ -54,11 +54,11 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
     main.append(alert);
   }
 
-  if (context && typeof structuredClone === "function") {
+  if (editorAvailable) {
     const library = document.createElement("section");
     library.dataset["testid"] = "library";
     library.className = "library";
-    library.innerHTML = '<p class="eyebrow">나의 코스</p><h1>새로운 모험의 시작</h1><p>첫 코스의 이름을 정하고 작업실을 열어 보세요.</p><p class="muted">현재는 기초 화면입니다. 코스 편집, 플레이, 저장 및 파일 기능은 아직 제공되지 않습니다.</p>';
+    library.innerHTML = '<p class="eyebrow">나의 코스</p><h1>새로운 모험의 시작</h1><p>첫 코스의 이름을 정하고 작업실을 열어 보세요.</p><p class="muted">코스 화면 이동·확대와 요소 미리보기를 사용할 수 있습니다. 편집, 플레이, 저장 및 파일 기능은 아직 제공되지 않습니다.</p>';
     const newCourse = document.createElement("button");
     newCourse.dataset["testid"] = "new-course";
     newCourse.textContent = "새 코스 만들기";
@@ -94,20 +94,30 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
         title.reportValidity();
         return;
       }
-      const workspace = document.createElement("section");
-      workspace.className = "workspace";
-      const heading = document.createElement("h1");
-      heading.textContent = name;
-      heading.tabIndex = -1;
-      const status = document.createElement("p");
-      status.dataset["testid"] = "save-status";
-      status.textContent = "저장 기능 준비 중 — 이 제목은 저장되지 않습니다.";
-      const description = document.createElement("p");
-      description.textContent = "편집 작업 영역 · 편집 도구와 플레이 기능은 준비 중입니다.";
-      workspace.append(heading, status, description, canvas);
-      library.replaceWith(workspace);
-      heading.focus();
-      document.title = `${name} | 코스 메이커`;
+      // The catalog owns the exact seed; the form title crosses the existing validator once.
+      try {
+        const seed = createNewCourse({ courseId: crypto.randomUUID(), areaId: crypto.randomUUID(), goalId: crypto.randomUUID() });
+        if (!seed.ok) throw new Error(`${seed.error.code}: ${seed.error.message}`);
+        const result = validateCourse({ ...seed.value, title: name });
+        if (!result.ok) {
+          title.setCustomValidity(result.error.message); title.reportValidity(); return;
+        }
+        const host = document.createElement("div"), editorRoot = document.createElement("div");
+        host.className = "normal-editor-host"; editorRoot.className = "normal-editor-root";
+        const notice = main.querySelector('[data-testid="error-dialog"]');
+        host.append(editorRoot); app.append(host);
+        const editor = mountNormalEditor(editorRoot, result.value);
+        if (notice) host.prepend(notice);
+        app.replaceChildren(host);
+        editor.element.querySelector<HTMLElement>('[data-testid="editor-canvas"]')?.focus();
+        document.title = `${result.value.title} | 코스 메이커`;
+      } catch (error) {
+        app.querySelector(".normal-editor-host")?.remove();
+        const failure = document.createElement("p"); failure.setAttribute("role", "alert");
+        failure.dataset["testid"] = "create-error";
+        failure.textContent = `코스를 열지 못했습니다. 다시 시도해 주세요. ${error instanceof Error ? error.message : String(error)}`;
+        form.querySelector('[data-testid="create-error"]')?.remove(); form.append(failure);
+      }
     });
     library.append(newCourse, form);
     main.append(library);
