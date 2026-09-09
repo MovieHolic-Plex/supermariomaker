@@ -1,29 +1,48 @@
 import { frameAt } from "../assets/manifest";
 import type { AssetKey } from "../assets/manifest";
-import { currentArea } from "../game/state";
+import { currentArea, runtimeViewport } from "../game/state";
 import type { Runtime } from "../game/state";
+import { shellWiggling } from "../game/shells";
 import { canvasContext, drawSprite } from "../render/assets";
-import { drawPole, GAME_VIEWPORT, renderScene } from "../render/renderer";
+import { drawPole, renderScene } from "../render/renderer";
 import { previewSprites } from "./course-preview";
 
 /** Presentation derives only from authoritative state. It never feeds positions back to simulation. */
 export function playView(runtime: Runtime) {
   const area = currentArea(runtime), player = runtime.player;
-  const camera = {
-    x: Math.round(Math.max(0, Math.min(area.source.width * 16 - GAME_VIEWPORT.width, player.x - 128))),
-    y: Math.round(Math.max(0, Math.min(area.source.height * 16 - GAME_VIEWPORT.height, player.y - 160))),
-  };
+  const viewport = runtimeViewport(runtime), camera = { x: viewport.x, y: viewport.y };
   let key: AssetKey;
-  if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
+  if (runtime.combat.defeated) key = "mario.small.death";
+  else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
   else if (!player.grounded) key = `mario.${player.form}.jump`;
   else if (player.skidding) key = `mario.${player.form}.skid`;
   else if (player.vx !== 0) key = frameAt(`mario.${player.form}.run`, runtime.tick, 6);
   else key = `mario.${player.form}.idle`;
-  return { camera, theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
+  const ground = [...runtime.ground.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId) return [];
+    let key: AssetKey;
+    let wiggling = false;
+    switch (actor.kind) {
+      case "goomba": case "buzzy": key = frameAt(`enemy.${actor.kind}.walk`, runtime.tick, 8); break;
+      case "koopa": key = frameAt(`enemy.koopa.${actor.color}.walk`, runtime.tick, 8); break;
+      case "paratroopa": key = frameAt(`enemy.koopa.${actor.color}.wings`, runtime.tick, 8); break;
+      case "shell":
+        key = actor.shell.occupant === "buzzy" ? "enemy.buzzy.shell" : `enemy.koopa.${actor.shell.occupant === "redKoopa" ? "red" : "green"}.shell`;
+        wiggling = shellWiggling(actor.shell); break;
+      case "defeated":
+        if (actor.previousKind !== "goomba" || actor.cause !== "stomp") return [];
+        key = "enemy.goomba.squashed"; break;
+    }
+    return [{ id: actor.id, key, x: actor.x + (actor.kind === "shell" && wiggling ? Math.floor(actor.shell.idleTicks / 4) % 2 * 2 - 1 : 0),
+      y: actor.y, flipX: actor.facing === 1, wiggling }];
+  });
+  return { camera, ground, theme: area.source.theme, player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
-  renderScene(canvas, { ...view, sprites: previewSprites({ ...area.source, tiles: [...area.tiles.values()] }, view.camera) });
+  // Only play replaces authored ground actors. The diagnostic/editor previews retain every object.
+  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id));
+  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera), ...view.ground] });
   const context = canvasContext(canvas), options = { theme: view.theme };
   for (const object of area.source.objects) if (object.kind === "flagGoal") {
     const x = object.x - view.camera.x, y = object.y - view.camera.y;

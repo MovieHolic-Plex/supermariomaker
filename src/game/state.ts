@@ -6,6 +6,8 @@ import type { Contact } from "./collision";
 import type { BlockEvent, BlockState } from "./blocks";
 import type { ItemEvent, ItemState } from "./items";
 import type { CombatState, ProgressEvent, ProgressState } from "./player";
+import { createGroundState } from "./enemies-ground";
+import type { GroundEvent, GroundState } from "./enemies-ground";
 
 export interface PlayerState {
   /** Bottom-center, pixels. Velocity is pixels per authoritative tick. */
@@ -31,11 +33,12 @@ export interface Runtime {
   combat: CombatState;
   blocks: BlockState;
   items: ItemState;
+  ground: GroundState;
 }
 export type GameEvent =
   | Readonly<{ type: "jump"; tick: number }>
   | Readonly<{ type: "contact"; tick: number; contact: Contact }>
-  | BlockEvent | ItemEvent | ProgressEvent;
+  | BlockEvent | ItemEvent | ProgressEvent | GroundEvent;
 
 /** Validates the spawn at this boundary. Goal-free permission belongs to the host's explicit action. */
 export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Runtime {
@@ -47,10 +50,12 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
     areaId: start.areaId, tick: 0, seed: 0x534d4231,
     progress: { lives: 3, coins: 0, score: 0 }, combat: { starTicks: 0, invulnerabilityTicks: 0, defeated: false },
     blocks: { multiCoins: {}, pending: [] }, items: { actors: [], pending: [], nextId: 1 },
+    ground: { actors: new Map(), stompChain: 0 },
     player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0 }, contacts: [],
   };
   const support = sweepAxis(currentArea(runtime), playerBounds(runtime.player), 1 / PHYSICS.snap, "y");
   runtime.player.grounded = support.distance === 0 && support.contacts.length > 0;
+  runtime.ground = createGroundState(runtime);
   return runtime;
 }
 export function currentArea(runtime: Runtime): RuntimeArea {
@@ -58,11 +63,21 @@ export function currentArea(runtime: Runtime): RuntimeArea {
   if (!area) throw new Error(`Runtime area missing: ${runtime.areaId}`);
   return area;
 }
+/** The same logical viewport drives activation and presentation; no renderer/DOM dependency. */
+export function runtimeViewport(runtime: Runtime) {
+  const area = currentArea(runtime);
+  return {
+    x: Math.round(Math.max(0, Math.min(area.source.width * 16 - 256, runtime.player.x - 128))),
+    y: Math.round(Math.max(0, Math.min(area.source.height * 16 - 240, runtime.player.y - 160))),
+    width: 256, height: 240,
+  };
+}
 /** Detached observation. No Maps, DOM objects, live references, setters or authoring writers. */
 export function snapshot(runtime: Runtime) {
   return structuredClone({ tick: runtime.tick, seed: runtime.seed, areaId: runtime.areaId,
     player: runtime.player, contacts: runtime.contacts, progress: runtime.progress, combat: runtime.combat,
     blocks: runtime.blocks, items: runtime.items,
+    ground: { actors: [...runtime.ground.actors.values()], stompChain: runtime.ground.stompChain },
     areas: [...runtime.areas.values()].map(area => ({ id: area.source.id, tiles: [...area.tiles.values()] })) });
 }
 export type RuntimeSnapshot = ReturnType<typeof snapshot>;

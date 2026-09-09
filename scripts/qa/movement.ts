@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { startNativeFocus } from "./movement-native";
 import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { chromium } from "playwright-core";
@@ -49,9 +51,16 @@ const nativeArgs = ["--no-first-run", "--no-default-browser-check", "--force-dev
 /** Native isolated profile + documented noDefaults: Playwright's normal contexts force focus ON.
  * A second CDP session cannot undo that session-owned override. No daily-driver profile is touched. */
 async function nativeChrome(evidence: string, nativeFocus: boolean) {
-  const profile = await mkdtemp(resolve(evidence, "chrome-profile-"));
+  const profile = await mkdtemp(resolve(tmpdir(), "movement-chrome-"));
+  const focus = nativeFocus ? await startNativeFocus(evidence).catch(async error => { await rm(profile, { recursive: true }); throw error; }) : null;
+  const exited = Promise.withResolvers<unknown>(); let pid = 0;
+  focus?.watchLaunch(() => pid);
+  await json(`${evidence}/native-registration.json`, { profile, nativeFocus, args: nativeArgs, exitSubscribedAtSpawn: true });
   const child = Bun.spawn(["C:/Program Files/Google/Chrome/Application/chrome.exe", `--user-data-dir=${profile}`,
-    "--remote-debugging-port=0", ...nativeArgs, "about:blank"], { stdout: "ignore", stderr: "pipe" });
+    "--remote-debugging-port=0", ...nativeArgs, "about:blank"], { windowsHide: true, stdout: "ignore", stderr: "pipe",
+    onExit(proc, exitCode, signalCode, error) { exited.resolve({ pid: proc.pid, exitCode, signalCode, error: error ? String(error) : null }); },
+  });
+  pid = child.pid; await json(`${evidence}/native-created.json`, { pid, profile });
   const ready = Promise.withResolvers<string>();
   const stderr = (async () => {
     let text = "";
@@ -62,25 +71,44 @@ async function nativeChrome(evidence: string, nativeFocus: boolean) {
     ready.reject(new Error("Native Chrome exited before DevTools readiness")); return text;
   })();
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | null = null;
+  const pids = new Set([pid]);
   const close = async () => {
+    const failures: unknown[] = []; let exitResult: unknown;
     try {
-      if (browser?.isConnected()) await (await browser.newBrowserCDPSession()).send("Browser.close");
-      await bounded(child.exited, "native Chrome process exit");
-    } finally {
-      if (child.exitCode === null) child.kill();
-      await child.exited;
-      if (browser) await browser.close();
-      await Bun.write(`${evidence}/chrome-stderr.txt`, await stderr);
+      try { await focus?.restore(); } catch (error) { failures.push(error); }
+      if (browser?.isConnected()) {
+        try {
+          const cdp = await browser.newBrowserCDPSession();
+          for (const proc of (await cdp.send("SystemInfo.getProcessInfo")).processInfo) pids.add(proc.id);
+          await cdp.send("Browser.close");
+        } catch (error) { failures.push(error); }
+        await browser.close();
+      }
+      try { exitResult = await bounded(exited.promise, "native Chrome process exit event"); }
+      catch (error) { failures.push(error); child.kill(); exitResult = await bounded(exited.promise, "native Chrome termination event"); }
+      await focus?.verifyExited([...pids]);
+      for (const ownedPid of pids) {
+        assert.throws(() => process.kill(ownedPid, 0), { code: "ESRCH" }, `Owned PID ${ownedPid} exited`);
+      }
       await rm(profile, { recursive: true });
-      await json(`${evidence}/native-cleanup.json`, { pid: child.pid, exitCode: child.exitCode, profileRemoved: !existsSync(profile), browserConnected: browser?.isConnected() ?? false });
+    } finally {
+      try { await focus?.stop(); } catch (error) { failures.push(error); }
+      await Bun.write(`${evidence}/chrome-stderr.txt`, await stderr);
+      await json(`${evidence}/native-cleanup.json`, { pid, pids: [...pids], exitResult, profile, profileRemoved: !existsSync(profile), browserConnected: browser?.isConnected() ?? false,
+        failures: failures.map(String) });
     }
+    if (failures.length) throw new AggregateError(failures, "Native cleanup failed");
   };
   try {
     browser = await chromium.connectOverCDP(await bounded(ready.promise, "native Chrome DevTools stderr event"), { noDefaults: nativeFocus, timeout: 10_000 });
+    const cdp = await browser.newBrowserCDPSession(); const info = await cdp.send("SystemInfo.getProcessInfo");
+    assert.equal(info.processInfo.find(proc => proc.type === "browser")?.id, pid);
+    for (const proc of info.processInfo) pids.add(proc.id); await cdp.detach();
     const context = browser.contexts()[0]; assert(context, "Native isolated default context");
-    return { browser, context, close };
+    return { browser, context, close, focus, pid };
   } catch (error) { await close(); throw error; }
 }
+
 async function movementScenario(evidence: string, origin: string, edge: boolean) {
   const native = await nativeChrome(evidence, edge), { browser, context } = native;
   const actions: unknown[] = [], captures: unknown[] = [], observations: unknown[] = [], errors: string[] = [], consoleMessages: unknown[] = [];
@@ -91,7 +119,7 @@ async function movementScenario(evidence: string, origin: string, edge: boolean)
     page.on("console", message => { consoleMessages.push({ type: message.type(), text: message.text() }); if (message.type() === "error") errors.push(message.text()); });
     page.on("requestfailed", request => errors.push(`${request.url()} ${request.failure()?.errorText}`));
     await page.setViewportSize(viewport);
-    await page.bringToFront();
+    if (native.focus) await native.focus.prepare(page, native.pid); else await page.bringToFront();
     const sources: unknown[] = [];
     for (const pattern of ["src/**/*.ts", "scripts/qa/movement.ts", "tests/fixtures/movement.ts", "tests/movement.test.ts", "dist/app.js", "package.json", "bun.lock"]) {
       for await (const file of new Bun.Glob(pattern).scan(".")) sources.push({ file, sha256: sha(await Bun.file(file).bytes()) });
@@ -116,6 +144,7 @@ async function movementScenario(evidence: string, origin: string, edge: boolean)
     });
     await page.goto(`${origin}/?qa=play`, { waitUntil: "load" });
     await bounded(page.evaluate("globalThis.__movementMounted"), "play mounted event");
+    if (edge) assert.deepEqual(await page.evaluate(() => ({ focused: document.hasFocus(), hidden: document.hidden })), { focused: true, hidden: false });
     const authored = createMovementFixture(), bytes = new TextEncoder().encode(fixtureValue(serializeCourse(authored)));
     const path = `${evidence}/movement.smb1.json`; await Bun.write(path, bytes);
     await armEvent(page, "fixture-read-settled"); await page.getByTestId("import-course").setInputFiles(resolve(path)); await domSignal(page);
@@ -200,20 +229,35 @@ async function movementScenario(evidence: string, origin: string, edge: boolean)
       await start(true); await page.keyboard.down("Shift"); await arm(page, { wall: true }); await page.keyboard.down("ArrowRight"); const wall = await signal(page);
       assert.equal(wall.runtime?.player.x, 442); assert.equal(wall.runtime.player.vx, 0);
       await pause(); await capture("wall-stop"); actions.push({ action: "run into wall", wall });
+      await start(true);
+      await page.getByTestId("play-note").focus(); await page.keyboard.type("wasdz"); await page.keyboard.press("Space"); await page.keyboard.press("ArrowRight"); await page.keyboard.press("Shift+X");
+      const beforeText = await state(page); assert(beforeText.runtime); await arm(page, { tick: beforeText.runtime.tick + 3 }); const afterText = await signal(page);
+      assert.equal(await page.getByTestId("play-note").inputValue(), "wasdz X"); assert.equal(afterText.runtime?.player.x, 40); assert.equal(afterText.runtime.player.y, 208); assert.deepEqual(afterText.input, EMPTY_INPUT);
+      actions.push({ action: "real text field keyboard does not leak shortcuts", beforeText, afterText });
+      await page.getByTestId("game-canvas").focus(); await pause(); await capture("form-focus-no-leak");
+      const initial1 = await start(true); await pause(); const initial2 = await start(true); assert.deepEqual(initial1.runtime, initial2.runtime);
+      await pause(); actions.push({ action: "restart twice equal initial runtime", initial1, initial2 });
     } else {
       await page.keyboard.down("Shift"); await page.keyboard.down("ArrowRight");
       await arm(page, { jump: true }); await page.keyboard.down("Space"); const launch = await signal(page); assert(launch.runtime);
       await arm(page, { tick: launch.runtime.tick + 4 }); await signal(page);
-      // Actual tab activation, with native browser focus/visibility restored before app startup.
-      await arm(page, { mode: "PAUSED" });
+      // Prearm the host before a guarded, actual handoff to our owned neutral HWND.
+      assert(native.focus); await arm(page, { mode: "PAUSED" });
+      await native.focus.blur(page);
+      await armEvent(page, "visibilitychange");
       const away = await context.newPage(); await away.goto("about:blank", { waitUntil: "load" }); await away.bringToFront();
+      await domSignal(page); assert.equal(await page.evaluate(() => document.hidden), true);
       const paused = await signal(page); assert(paused.reason === "blur" || paused.reason === "hidden"); assert(paused.runtime);
       assert.equal(paused.clock.debtMs, 0); assert.deepEqual(paused.input, EMPTY_INPUT);
       const lifecycle = await page.evaluate("globalThis.__movementLifecycle") as { type: string; trusted: boolean }[];
       assert(lifecycle.some(event => event.type === "blur" && event.trusted), "Must observe real trusted browser blur, never synthetic dispatch");
-      // The foreign page's actual load/focus events provide the away lifecycle; no sleeps or polling.
-      await page.bringToFront(); await away.close();
+      // Closing the owned away tab is the actual visible transition; native acquire then returns focus without CDP window activation.
+      await armEvent(page, "visibilitychange"); await away.close(); await domSignal(page);
+      await native.focus.acquire(page);
       assert.deepEqual((await state(page)).runtime, paused.runtime, "Focus return is not explicit resume");
+      // Native helper clicks the owned window client center, which is the controls column, not the 512px canvas.
+      await page.getByTestId("game-canvas").click();
+      assert.equal(await page.getByTestId("game-canvas").evaluate(canvas => canvas === document.activeElement), true);
       await page.keyboard.up("ArrowRight"); await page.keyboard.up("Shift"); await page.keyboard.up("Space");
       await page.evaluate(() => {
         Object.defineProperty(globalThis, "__pausedKey", { configurable: true, value: new Promise(resolve => {
@@ -237,14 +281,7 @@ async function movementScenario(evidence: string, origin: string, edge: boolean)
       assert(Math.abs(after.runtime.player.x - paused.runtime.player.x) <= 14); assert(Math.abs(after.runtime.player.y - paused.runtime.player.y) <= 30);
       actions.push({ action: "real blur, inactive keys, explicit resume; five contiguous ticks", lifecycle, paused, resumed, after, resumedTicks });
       await pause(); await capture("resumed-no-stale-input");
-      await start(true);
-      await page.getByTestId("play-note").focus(); await page.keyboard.type("wasdz"); await page.keyboard.press("Space"); await page.keyboard.press("ArrowRight"); await page.keyboard.press("Shift+X");
-      const beforeText = await state(page); assert(beforeText.runtime); await arm(page, { tick: beforeText.runtime.tick + 3 }); const afterText = await signal(page);
-      assert.equal(await page.getByTestId("play-note").inputValue(), "wasdz X"); assert.equal(afterText.runtime?.player.x, 40); assert.equal(afterText.runtime.player.y, 208); assert.deepEqual(afterText.input, EMPTY_INPUT);
-      actions.push({ action: "real text field keyboard does not leak shortcuts", beforeText, afterText });
-      await page.getByTestId("game-canvas").focus(); await pause(); await capture("form-focus-no-leak");
-      const initial1 = await start(true); await pause(); const initial2 = await start(true); assert.deepEqual(initial1.runtime, initial2.runtime);
-      await pause(); actions.push({ action: "restart twice equal initial runtime", initial1, initial2 });
+
     }
     await arm(page, { mode: "READY" }); await page.getByTestId("return-editor").click(); const returned = await signal(page); assert.equal(returned.runtime, null);
     assert.deepEqual(await page.evaluate(() => window.__qa?.course()), authored, "Playing/restarting cannot mutate authored document");
@@ -255,6 +292,8 @@ async function movementScenario(evidence: string, origin: string, edge: boolean)
     await json(`${evidence}/tick-input-log.json`, await page.evaluate("globalThis.__movementLogs"));
     await json(`${evidence}/lifecycle.json`, await page.evaluate("globalThis.__movementLifecycle"));
     assert.deepEqual(errors, []);
+  } catch (error) {
+    await json(`${evidence}/original-failure.json`, { error: String(error), stack: error instanceof Error ? error.stack : null }); throw error;
   } finally {
     try {
       if (!page.isClosed()) {

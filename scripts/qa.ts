@@ -8,6 +8,7 @@ import { assetSheet, assetMissing } from "./qa/assets";
 import { fixtureLoad, fixtureReject } from "./qa/fixtures";
 import { movement, movementEdge } from "./qa/movement";
 import { blocks, blocksEdge } from "./qa/blocks";
+import { enemiesGround, enemiesGroundEdge } from "./qa/enemies-ground";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -87,6 +88,8 @@ try {
       case "movement-edge": await movementEdge(directory, origin); break;
       case "blocks": await blocks(directory, origin); break;
       case "blocks-edge": await blocksEdge(directory, origin); break;
+      case "enemies-ground": await enemiesGround(directory, origin); break;
+      case "enemies-ground-edge": await enemiesGroundEdge(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

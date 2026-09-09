@@ -29,6 +29,9 @@ describe("QA command contract", () => {
   test.each(["blocks", "blocks-edge", "blocks,blocks-edge", "movement,blocks-edge"]) ("accepts blocks integration %s", scenario => {
     expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
   });
+  test.each(["enemies-ground", "enemies-ground-edge", "enemies-ground,enemies-ground-edge"]) ("accepts live ground integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
   test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "catalog", "catalog-invalid", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "fixture-reject,catalog", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });
