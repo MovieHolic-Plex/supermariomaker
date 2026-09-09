@@ -1,5 +1,5 @@
 import { getFrame } from "../assets/manifest";
-import { CATALOG_CATEGORIES, OBJECT_CATALOG, SPAWNED_CATALOG, TILE_CATALOG, type SpawnedKind } from "../level/catalog";
+import { CATALOG_CATEGORIES, createObject, OBJECT_CATALOG, SPAWNED_CATALOG, TILE_CATALOG, type SpawnedKind } from "../level/catalog";
 import type { AreaV1, CourseV1, ObjectKind, TileKind } from "../level/types";
 import { canvasContext, drawSprite } from "../render/assets";
 
@@ -20,7 +20,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
   const document = root.ownerDocument, entry = EDITOR_CATALOG[kind];
   root.replaceChildren();
   const heading = document.createElement("h2"); heading.textContent = "속성 미리보기";
-  const subheading = document.createElement("p"); subheading.className = "editor-eyebrow"; subheading.textContent = `${CATALOG_CATEGORIES[entry.category]} / ${entry.placeable ? "배치 요소" : "자동 생성 요소"}`;
+  const subheading = document.createElement("p"); subheading.className = "editor-eyebrow"; subheading.textContent = `${CATALOG_CATEGORIES[entry.category]} / ${entry.placeable ? "배치 요소" : "자동 생성"}`;
   const hero = document.createElement("div"); hero.className = "editor-inspector-hero";
   const name = document.createElement("h3"); name.textContent = entry.label; name.dataset["testid"] = "preview-kind"; name.dataset["kind"] = kind;
   hero.append(catalogIcon(document, kind, area.theme, 80), name);
@@ -34,11 +34,29 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
       row(field?.label ?? key, typeof value === "object" ? JSON.stringify(value) : String(value));
     }
   } else row("기본 속성", kind === "piranha" ? "연결할 토관이 필요합니다" : "배치 위치에서 결정됩니다");
-  const notice = document.createElement("p"); notice.className = "editor-notice"; notice.textContent = "팔레트 선택은 미리보기입니다. 배치와 속성 변경은 아직 지원하지 않습니다.";
+  const notice = document.createElement("p"); notice.className = "editor-notice"; notice.textContent = "타일 그리기·지우기·채우기를 사용할 수 있습니다. 오브젝트 배치와 속성 저장은 아직 지원하지 않습니다.";
+  const draft = document.createElement("label");
+  const error = document.createElement("p"); error.className = "editor-notice"; error.dataset["testid"] = "property-error"; error.hidden = true;
+  if (kind === "platform") {
+    draft.append("길이 초안");
+    const input = document.createElement("input"); input.type = "number"; input.dataset["testid"] = "property-length";
+    input.value = "3"; input.min = "2"; input.max = "8"; input.autocomplete = "off";
+    input.addEventListener("input", () => {
+      const result = createObject({ course, areaId: area.id }, {
+        id: globalThis.crypto.randomUUID(), kind: "platform", x: 64, y: 208,
+        props: { motion: "horizontal", length: Number(input.value), travel: 8, speed: 1 },
+      });
+      if (result.ok) { error.hidden = true; error.textContent = ""; input.setCustomValidity(""); }
+      else { error.hidden = false; error.textContent = `${result.error.code}:${result.error.path}`; input.setCustomValidity(result.error.message); }
+    });
+    draft.append(input);
+  }
   const areaHeading = document.createElement("h3"); areaHeading.className = "editor-section-heading"; areaHeading.textContent = "현재 영역";
   const areaInfo = document.createElement("dl"); areaInfo.className = "editor-facts";
   for (const [label, value] of [["이름", area.name], ["테마", EDITOR_THEMES[area.theme]], ["크기", `${area.width} × ${area.height}칸`], ["배치", `타일 ${area.tiles.length} · 오브젝트 ${area.objects.length}`], ["제한 시간", course.timerSeconds === 0 ? "무제한" : `${course.timerSeconds}초`]]) {
     const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label ?? ""; dd.textContent = value ?? ""; areaInfo.append(dt, dd);
   }
-  root.append(heading, subheading, hero, properties, notice, areaHeading, areaInfo);
+  root.append(heading, subheading, hero, properties, notice);
+  if (kind === "platform") root.append(draft, error);
+  root.append(areaHeading, areaInfo);
 }

@@ -13,6 +13,7 @@ import { editorShellScenario, editorFocusScenario } from "./qa/editor";
 import { platforms, platformsEdge } from "./qa/platforms";
 import { hazards, hazardsEdge } from "./qa/hazards";
 import { water, waterEdge } from "./qa/water";
+import { catalogInvalid, catalogScenario, paintHistory, paintHistoryEdge } from "./qa/paint";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -102,6 +103,10 @@ try {
       case "hazards-edge": await hazardsEdge(directory, origin); break;
       case "water": await water(directory, origin); break;
       case "water-edge": await waterEdge(directory, origin); break;
+      case "paint-history": await paintHistory(directory, origin); break;
+      case "paint-history-edge": await paintHistoryEdge(directory, origin); break;
+      case "catalog": await catalogScenario(directory, origin); break;
+      case "catalog-invalid": await catalogInvalid(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

@@ -1,7 +1,9 @@
+import { createHistory, type EditorHistory } from "../editor/history";
+import { beginPaintGesture, type PaintBrush, type PaintGesture, type PaintTool } from "../editor/paint";
 import { backingTransform, canvasSize, EDITOR_ZOOMS, panViewport, screenToWorld, worldToCell, zoomViewport } from "../editor/viewport";
 import type { EditorZoom, Point, Viewport } from "../editor/viewport";
-import { CATALOG_CATEGORIES, type CatalogCategory } from "../level/catalog";
-import type { AreaV1, CourseV1 } from "../level/types";
+import { CATALOG_CATEGORIES, TILE_CATALOG, type CatalogCategory } from "../level/catalog";
+import type { AreaV1, BlockContent, CourseV1, TileKind } from "../level/types";
 import { canvasContext } from "../render/assets";
 import { GAME_VIEWPORT } from "../render/renderer";
 import { renderCoursePreview } from "./course-preview";
@@ -19,6 +21,12 @@ export interface EditorViewState {
   readonly panning: boolean;
   readonly size: Readonly<{ width: number; height: number }>;
   readonly dpr: number;
+  readonly tool: PaintTool | null;
+  readonly undoCount: number;
+  readonly redoCount: number;
+  readonly dirty: boolean;
+  readonly lastOutcome: "committed" | "noop" | "rejected" | "cancelled" | null;
+  readonly preview: Readonly<{ cells: number; clipped: boolean; outOfBounds: boolean }> | null;
 }
 export interface EditorViewOptions {
   /** A validated document. The view takes a copy and never writes to the supplied Course. */
@@ -40,12 +48,23 @@ export interface EditorView {
   dispose(): void;
 }
 
-/** Native, static editor core. No simulation, history, persistence, or global QA registration. */
+function tileBrush(kind: PaletteKind): PaintBrush | null {
+  if (!Object.hasOwn(TILE_CATALOG, kind)) return null;
+  const tile = kind as TileKind, defaults = TILE_CATALOG[tile].defaults;
+  return Object.hasOwn(defaults, "content") ? { kind: tile, content: (defaults as { content: BlockContent }).content } : { kind: tile };
+}
+function typingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+    || (target instanceof HTMLElement && target.isContentEditable);
+}
+
+/** Native, static editor core. No simulation, persistence, or global QA registration. */
 export function mountEditor(root: HTMLElement, options: EditorViewOptions): EditorView {
   const document = root.ownerDocument, window = document.defaultView;
   if (!window) throw new Error("Editor view requires a window");
   const events = new AbortController(), listener = { signal: events.signal };
-  let course = structuredClone(options.course);
+  let history: EditorHistory = createHistory(options.course);
+  let course = history.document();
   let area: AreaV1 = selectedArea(course.mainAreaId);
   let view: Viewport = options.viewport ?? { x: -16, y: -16, zoom: 2 };
   let kind: PaletteKind = "ground", category: CatalogCategory = "terrain", titleDraft = course.title;
@@ -53,6 +72,8 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   let zoomAnchor: Point | null = null;
   let size = { width: 0, height: 0 }, dpr = window.devicePixelRatio;
   let drag: Readonly<{ id: number; start: Point; view: Viewport }> | null = null;
+  let paint: Readonly<{ id: number; gesture: PaintGesture }> | null = null;
+  let tool: PaintTool | null = null, lastOutcome: EditorViewState["lastOutcome"] = null;
   let disposed = false;
   const chunks = new Map<string, HTMLCanvasElement>();
   const panel = document.createElement("main"); panel.className = "editor-view"; panel.dataset["testid"] = "editor-view"; panel.setAttribute("aria-label", "코스 편집기 미리보기");
@@ -62,6 +83,8 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     onTitleDraft: value => { titleDraft = value; options.onTitleDraft?.(value); publish("title-draft"); },
     onZoom: zoom => changeZoom(zoom), onHome: home,
     onGrid: value => { grid = value; render("grid"); },
+    onTool: next => { cancelPaint(); tool = next; toolbar.setTool(tool); publish("tool"); },
+    onUndo: () => undo(), onRedo: () => redo(),
   });
   const workspace = document.createElement("div"); workspace.className = "editor-workspace";
   const palette = document.createElement("aside"); palette.className = "editor-palette"; palette.dataset["testid"] = "editor-palette"; palette.setAttribute("aria-label", "요소 팔레트");
@@ -72,7 +95,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.dataset["testid"] = `category-${id}`; button.dataset["category"] = id;
     button.addEventListener("click", () => { category = id as CatalogCategory; updatePalette(); publish("category"); }, listener); categories.append(button);
   }
-  const paletteNote = document.createElement("p"); paletteNote.className = "editor-palette-note"; paletteNote.textContent = "요소를 눌러 모양과 기본 속성 확인";
+  const paletteNote = document.createElement("p"); paletteNote.className = "editor-palette-note"; paletteNote.textContent = "타일을 고른 뒤 그리기·지우기·채우기로 칸을 편집합니다";
   palette.append(categories, list, paletteNote);
   const stage = document.createElement("section"); stage.className = "editor-stage"; stage.dataset["testid"] = "editor-stage"; stage.setAttribute("aria-label", "코스 작업 화면");
   const stageHeader = document.createElement("div"); stageHeader.className = "editor-stage-header";
@@ -84,12 +107,12 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   const canvas = document.createElement("canvas"); canvas.className = "editor-canvas"; canvas.dataset["testid"] = "editor-canvas"; canvas.tabIndex = 0;
   canvas.setAttribute("aria-label", "코스 화면. 가운데 버튼 또는 스페이스와 드래그로 이동, 휠 또는 숫자 1, 2, 4, 8로 확대. 방향키로 이동, Home으로 시작 위치.");
   wrap.append(canvas);
-  const caption = document.createElement("p"); caption.className = "editor-stage-caption"; caption.textContent = "가운데 버튼 / Space + 드래그 이동 · 휠 확대 · 방향키 이동 · Home 시작 위치";
+  const caption = document.createElement("p"); caption.className = "editor-stage-caption"; caption.textContent = "그리기/지우기/채우기 · Ctrl+Z 실행 취소 · Ctrl+Y 다시 실행 · 가운데 버튼 / Space 이동";
   stage.append(stageHeader, wrap, caption);
   const inspector = document.createElement("aside"); inspector.className = "editor-inspector"; inspector.dataset["testid"] = "properties"; inspector.setAttribute("aria-label", "요소 속성 미리보기");
   workspace.append(palette, stage, inspector);
   const status = document.createElement("footer"); status.className = "editor-status"; status.dataset["testid"] = "editor-status";
-  const statusNote = document.createElement("span"); statusNote.className = "editor-status-note"; statusNote.dataset["testid"] = "save-status"; statusNote.textContent = "보기 전용 · 배치 / 저장 미지원 · 제목은 입력 초안";
+  const statusNote = document.createElement("span"); statusNote.className = "editor-status-note"; statusNote.dataset["testid"] = "save-status";
   const coordinates = document.createElement("output"); coordinates.dataset["testid"] = "viewport-status";
   status.append(statusNote, coordinates); panel.append(style, toolbar.header, toolbar.tools, workspace, status); root.replaceChildren(panel);
 
@@ -98,11 +121,54 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     if (!result) throw new Error("Validated editor area missing");
     return result;
   }
+  function historyCounts() { return history.snapshot(); }
+  function livePreview() {
+    if (!paint) return null;
+    const preview = paint.gesture.preview(course);
+    return { cells: preview.cells.length, clipped: preview.clipped, outOfBounds: preview.outOfBounds };
+  }
   function getState(): EditorViewState {
-    return { areaId: area.id, viewport: { ...view }, paletteKind: kind, titleDraft, hoveredCell: hoveredCell && { ...hoveredCell }, grid, panning: drag !== null, size: { ...size }, dpr };
+    const snap = historyCounts();
+    return {
+      areaId: area.id, viewport: { ...view }, paletteKind: kind, titleDraft, hoveredCell: hoveredCell && { ...hoveredCell },
+      grid, panning: drag !== null, size: { ...size }, dpr, tool, undoCount: snap.undoCount, redoCount: snap.redoCount,
+      dirty: snap.dirty, lastOutcome, preview: livePreview(),
+    };
   }
   function publish(reason: string): void {
     panel.dispatchEvent(new CustomEvent("editor-view-state", { bubbles: true, detail: { reason, ...getState() } }));
+  }
+  function syncHistory(): void {
+    const snap = historyCounts();
+    toolbar.setHistory({ undo: snap.undoCount, redo: snap.redoCount });
+    statusNote.textContent = snap.dirty ? "편집됨 · 저장 미지원" : "원본과 동일 · 저장 미지원";
+  }
+  function applyDocument(): void {
+    course = history.document(); area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
+    chunks.clear(); syncHistory(); renderInspector(inspector, course, area, kind);
+  }
+  function undo(): void {
+    cancelPaint(); if (!history.undo()) return; lastOutcome = null; applyDocument(); render("undo");
+  }
+  function redo(): void {
+    cancelPaint(); if (!history.redo()) return; lastOutcome = null; applyDocument(); render("redo");
+  }
+  function cancelPaint(): void {
+    if (!paint) return;
+    paint.gesture.cancel();
+    const id = paint.id; paint = null; lastOutcome = "cancelled";
+    if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    render("paint-cancel");
+  }
+  function finishPaint(reason: "paint-commit"): void {
+    if (!paint) return;
+    const outcome = paint.gesture.commit(history);
+    const id = paint.id; paint = null;
+    if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    lastOutcome = outcome.status;
+    if (outcome.status === "committed") applyDocument();
+    else syncHistory();
+    render(reason);
   }
   function updateAreas(): void {
     areas.replaceChildren(...course.areas.map(item => {
@@ -161,7 +227,13 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       context.stroke();
     }
     hoveredCell = pointer ? worldToCell(screenToWorld(pointer, view, canvas.getBoundingClientRect())) : null;
-    if (hoveredCell && hoveredCell.x >= 0 && hoveredCell.y >= 0 && hoveredCell.x < area.width && hoveredCell.y < area.height && !drag) {
+    if (paint) {
+      const preview = paint.gesture.preview(course);
+      context.fillStyle = preview.outOfBounds ? "#ff33cc99" : tool === "erase" ? "#1b1b1b99" : "#3ad0ff99";
+      context.strokeStyle = preview.outOfBounds ? "#ff79e8" : "#f4fbff";
+      context.lineWidth = 2 / view.zoom;
+      for (const cell of preview.cells) { context.fillRect(cell.x * 16, cell.y * 16, 16, 16); context.strokeRect(cell.x * 16, cell.y * 16, 16, 16); }
+    } else if (hoveredCell && hoveredCell.x >= 0 && hoveredCell.y >= 0 && hoveredCell.x < area.width && hoveredCell.y < area.height && !drag) {
       context.fillStyle = "#fff2aa30"; context.fillRect(hoveredCell.x * 16, hoveredCell.y * 16, 16, 16);
       context.strokeStyle = "#fff0a1"; context.lineWidth = 2 / view.zoom; context.strokeRect(hoveredCell.x * 16, hoveredCell.y * 16, 16, 16);
     }
@@ -175,7 +247,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     const id = drag?.id; drag = null;
     if (id !== undefined && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
   }
-  function clearInput(): void { space = false; releaseDrag(); render("input-clear"); }
+  function clearInput(): void { if (paint) cancelPaint(); space = false; releaseDrag(); render("input-clear"); }
   function resize(): void {
     const bounds = canvas.getBoundingClientRect(); size = { width: bounds.width, height: bounds.height }; dpr = window?.devicePixelRatio ?? 1;
     render("resize");
@@ -188,18 +260,30 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     } else {
       const world = screenToWorld(pointer, view, canvas.getBoundingClientRect()), cell = worldToCell(world);
       if (cell.x >= 0 && cell.y >= 0 && cell.x < area.width && cell.y < area.height) options.onCanvasPoint?.({ areaId: area.id, world, cell });
-      render("point");
+      const brush = tileBrush(kind);
+      if (tool && brush) {
+        event.preventDefault();
+        paint = { id: event.pointerId, gesture: beginPaintGesture({ areaId: area.id, tool, brush, origin: cell }) };
+        canvas.setPointerCapture(event.pointerId); render("paint-start");
+      } else render("point");
     }
   }, listener);
   canvas.addEventListener("pointermove", event => {
     pointer = { x: event.clientX, y: event.clientY }; zoomAnchor = pointer;
+    if (paint && paint.id === event.pointerId) {
+      paint.gesture.extend(worldToCell(screenToWorld(pointer, view, canvas.getBoundingClientRect())));
+      render("paint-extend"); return;
+    }
     if (drag && drag.id === event.pointerId) { view = panViewport(drag.view, { x: pointer.x - drag.start.x, y: pointer.y - drag.start.y }); options.onViewportChange?.({ ...view }); }
     render(drag ? "pan" : "pointer");
   }, listener);
-  canvas.addEventListener("pointerup", event => { if (drag?.id === event.pointerId) { releaseDrag(); render("pan-end"); } }, listener);
+  canvas.addEventListener("pointerup", event => {
+    if (paint?.id === event.pointerId) { finishPaint("paint-commit"); return; }
+    if (drag?.id === event.pointerId) { releaseDrag(); render("pan-end"); }
+  }, listener);
   canvas.addEventListener("pointercancel", clearInput, listener);
-  canvas.addEventListener("lostpointercapture", () => { drag = null; render("pan-end"); }, listener);
-  canvas.addEventListener("pointerleave", () => { if (!drag) { pointer = null; render("pointer-leave"); } }, listener);
+  canvas.addEventListener("lostpointercapture", () => { if (paint) finishPaint("paint-commit"); drag = null; render("pan-end"); }, listener);
+  canvas.addEventListener("pointerleave", () => { if (!drag && !paint) { pointer = null; render("pointer-leave"); } }, listener);
   canvas.addEventListener("auxclick", event => { if (event.button === 1) event.preventDefault(); }, listener);
   canvas.addEventListener("wheel", event => {
     if (event.ctrlKey || event.metaKey || event.deltaY === 0) return;
@@ -208,7 +292,13 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     if (zoom !== undefined && zoom !== view.zoom) changeZoom(zoom, pointer);
   }, { ...listener, passive: false });
   window.addEventListener("keydown", event => {
-    if (document.activeElement !== canvas || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.isComposing) return;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !typingTarget(event.target)) {
+      if (event.code === "KeyZ" && !event.shiftKey) { event.preventDefault(); undo(); return; }
+      if (event.code === "KeyY" || (event.code === "KeyZ" && event.shiftKey)) { event.preventDefault(); redo(); return; }
+    }
+    if (document.activeElement !== canvas || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.code === "Escape" && paint) { event.preventDefault(); cancelPaint(); return; }
     if (event.code === "Space") { event.preventDefault(); space = true; render("space"); return; }
     if (event.repeat) return;
     const zoom = EDITOR_ZOOMS.find(value => event.key === String(value));
@@ -225,17 +315,19 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   window.addEventListener("resize", resize, listener);
   areas.addEventListener("change", () => { clearInput(); area = selectedArea(areas.value); chunks.clear(); updatePalette(); renderInspector(inspector, course, area, kind); home(); }, listener);
   const observer = new ResizeObserver(resize); observer.observe(wrap);
-  updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); resize();
+  updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); syncHistory(); toolbar.setTool(tool); resize();
   if (!options.viewport) home();
   function dispose(): void {
     if (disposed) return;
     disposed = true; releaseDrag(); events.abort(); observer.disconnect(); chunks.clear(); panel.remove();
   }
   window.addEventListener("pagehide", dispose, listener);
-  return { element: panel, getState, getCourseSnapshot: () => structuredClone(course),
+  return { element: panel, getState, getCourseSnapshot: () => structuredClone(history.document()),
     setCourse(next) {
-      clearInput(); course = structuredClone(next); area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
-      titleDraft = course.title; toolbar.setTitle(course.title); chunks.clear(); updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); render("course");
+      clearInput(); history = createHistory(next); course = history.document();
+      area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
+      titleDraft = course.title; toolbar.setTitle(course.title); lastOutcome = null; chunks.clear();
+      updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind); syncHistory(); render("course");
     },
     setViewport(next) { clearInput(); view = { ...next }; render("viewport"); }, dispose,
   };
