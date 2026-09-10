@@ -109,6 +109,7 @@ export async function polish(evidence: string, origin: string) {
       await arm(page, "normal-editor-ready", "__readySignal");
       await page.getByTestId("create-course").click();
       await signal(page, "__readySignal");
+      await action(page, "home", () => page.getByTestId("viewport-home").click(), "__homeEditor");
       const importVisible = await page.getByTestId("import-course-button").evaluate(el => {
         const rect = el.getBoundingClientRect();
         return { text: el.textContent, width: rect.width, height: rect.height, visible: rect.width >= 44 && rect.height >= 44 };
@@ -143,6 +144,7 @@ export async function polish(evidence: string, origin: string) {
       await arm(page, "editor-view-state", "__savedInitial", { reason: "save", saveStatus: "saved" });
       await signal(page, "__savedInitial");
     }
+    await action(page, "home", () => page.getByTestId("viewport-home").click(), "__homeSaved");
     await captureMode(page, evidence, "saved", captures);
     await action(page, "tool", () => page.getByTestId("tool-paint").click(), "__tool");
     await action(page, "home", () => page.getByTestId("viewport-home").click(), "__homePaint");

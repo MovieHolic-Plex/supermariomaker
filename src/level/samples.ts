@@ -168,18 +168,18 @@ function castle(): CourseV1 {
   const courseId = id(0x2400), mainId = id(0x2401), galleryId = id(0x2402);
   const axeId = id(0x2403), bowserId = id(0x2404), firebarId = id(0x2405), podobooId = id(0x2406);
   const pipeMain = id(0x2407), pipeGallery = id(0x2408), hammerId = id(0x2409);
-  const pit = new Set([32, 33, 34, 35, 36, 37, 38, 39]);
+  const pit = new Set([32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43]);
   const tiles: TileCell[] = [
     ...floor("ground", pit),
     { x: 8, y: 9, kind: "hard" },
     { x: 9, y: 9, kind: "used" },
-    ...cage(22, 6, 6),
+    ...cage(32, 6, 6),
   ];
   const objects: PlacedObject[] = [
-    { id: bowserId, kind: "bowser", x: 400, y: 96, props: {} },
+    { id: bowserId, kind: "bowser", x: 560, y: 96, props: {} },
     {
-      id: axeId, kind: "castleGoal", x: 640, y: 208,
-      props: { bridge: { x: 32, y: 13, width: 8, height: 1 }, bowserId },
+      id: axeId, kind: "castleGoal", x: 704, y: 208,
+      props: { bridge: { x: 32, y: 13, width: 12, height: 1 }, bowserId },
     },
     { id: firebarId, kind: "firebar", x: 192, y: 64, props: { length: 3, direction: "cw", speed: "slow" } },
     { id: podobooId, kind: "podoboo", x: 16, y: 240, props: {} },

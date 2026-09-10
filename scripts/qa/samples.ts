@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import type { Page } from "playwright-core";
+import type { GameEvent } from "../../src/game/state";
 import type { PlayObservation } from "../../src/ui/play-gallery";
 import { parseCourse, serializeCourse } from "../../src/level/serialize";
 import { validateCourse } from "../../src/level/validate";
@@ -16,23 +17,32 @@ const KEYS: Record<RouteKey, string> = {
 };
 const ALL_KEYS = Object.values(KEYS);
 const THEMES: readonly SampleTheme[] = ["overworld", "underground", "underwater", "castle"];
-interface Match { mode?: PlayObservation["mode"]; initial?: boolean; tickMin?: number; cleared?: boolean; ending?: "flag" | "castle"; phase?: "slide" | "walk" | "wait" | "collapse" | "fall" }
+interface Match {
+  mode?: PlayObservation["mode"]; initial?: boolean; tickMin?: number; cleared?: boolean;
+  event?: GameEvent["type"]; ending?: "flag" | "castle"; phase?: "slide" | "walk" | "wait" | "collapse" | "fall";
+  collapsed?: boolean; bowserYMin?: number;
+}
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
 const routeTicks = (theme: SampleTheme) => SAMPLE_ROUTES[theme].reduce((sum, segment) => sum + segment.ticks, 0);
 const routeTimeoutMs = (theme: SampleTheme) => Math.ceil(routeTicks(theme) / 60 * 1000) + 2000;
 const canonical = (course: CourseV1): CourseV1 => fixtureValue(parseCourse(fixtureValue(serializeCourse(course))));
+const bowserY = (observed: PlayObservation) => observed.runtime?.hazards.actors.find(actor => actor.kind === "bowser")?.y ?? -Infinity;
 
 async function arm(page: Page, match: Match, slot: string, timeoutMs: number) {
   await page.evaluate(({ match, slot, timeoutMs }) => {
     const qa = window.__qa; if (!qa) throw new Error("Actual play observer missing");
     Object.defineProperty(globalThis, slot, { configurable: true, value: qa.nextState(state => {
-      const ending = state.runtime?.ending;
+      const runtime = state.runtime, ending = runtime?.ending;
+      const king = runtime?.hazards.actors.find(actor => actor.kind === "bowser");
       return (match.mode === undefined || state.mode === match.mode)
-        && (!match.initial || state.runtime?.tick === 0)
-        && (match.tickMin === undefined || (state.runtime?.tick ?? -1) >= match.tickMin)
+        && (!match.initial || runtime?.tick === 0)
+        && (match.tickMin === undefined || (runtime?.tick ?? -1) >= match.tickMin)
         && (!match.cleared || state.mode === "CLEARED" || state.events.some(event => event.type === "courseClear"))
+        && (match.event === undefined || state.events.some(event => event.type === match.event))
         && (match.ending === undefined || ending?.kind === match.ending)
-        && (match.phase === undefined || (ending !== undefined && "phase" in ending && ending.phase === match.phase));
+        && (match.phase === undefined || (ending !== undefined && "phase" in ending && ending.phase === match.phase))
+        && (!match.collapsed || (runtime?.areas.some(area => area.collapsedGoalIds.length > 0) ?? false))
+        && (match.bowserYMin === undefined || (king?.y ?? -Infinity) >= match.bowserYMin);
     }, timeoutMs) });
   }, { match, slot, timeoutMs });
 }
@@ -111,8 +121,13 @@ export async function samples(evidence: string, origin: string) {
       const dialog = await page.getByTestId("clear-dialog").evaluate(el => ({
         hidden: (el as HTMLElement).hidden, ending: (el as HTMLElement).dataset["ending"] ?? null, text: el.textContent,
       }));
+      const king = observed.runtime?.hazards.actors.find(actor => actor.kind === "bowser") ?? null;
       captures.push({ theme, phase, file: resolve(file), sha256: sha(png), bytes: png.byteLength,
         tick: observed.runtime?.tick, mode: observed.mode, dialog, player: observed.view?.player,
+        ending: observed.runtime?.ending ?? null,
+        collapsed: observed.runtime?.areas.some(area => area.collapsedGoalIds.length > 0) ?? false,
+        bowser: king && { id: king.id, kind: king.kind, x: king.x, y: king.y, falling: king.kind === "bowser" ? king.falling === true : false },
+        courseClear: observed.events.some(event => event.type === "courseClear"),
         visualApproval: "requires image-capable independent inspection" });
       return observed;
     };
@@ -147,12 +162,22 @@ export async function samples(evidence: string, origin: string) {
       await observe({ mode: "PLAYING" }, `${theme} resume interaction`, () => page.getByTestId("resume").click());
       await hold(page, first.keys);
       if (theme === "castle") {
-        await observe({ ending: "castle", phase: "fall" }, `${theme} axe-bridge-fall`, undefined, timeoutMs);
+        const axe = await observe({ event: "axe", ending: "castle", collapsed: true }, `${theme} axe`, undefined, timeoutMs);
+        assert(axe.events.some(event => event.type === "axe"));
+        assert(axe.events.some(event => event.type === "bridge-collapse"));
+        assert.equal(axe.runtime?.ending.kind, "castle");
         await hold(page, []);
+        const startY = bowserY(axe) === -Infinity ? 208 : bowserY(axe);
+        await observe({ ending: "castle", bowserYMin: startY + 8 }, `${theme} bowser-fall`, undefined, timeoutMs);
         await observe({ mode: "PAUSED" }, `${theme} pause ending`, () => page.keyboard.press("Escape"));
         const endingShot = await capture(theme, "ending");
-        assert.equal(endingShot.runtime?.ending.kind, "castle");
-        assert.equal(endingShot.runtime?.ending && "phase" in endingShot.runtime.ending ? endingShot.runtime.ending.phase : "", "fall");
+        const ending = endingShot.runtime?.ending;
+        assert.equal(endingShot.mode, "PAUSED");
+        assert.equal(ending?.kind, "castle");
+        assert.equal(ending && "phase" in ending ? ending.phase : "", "fall");
+        assert.equal(endingShot.runtime?.areas.some(area => area.collapsedGoalIds.length > 0), true);
+        assert.ok(bowserY(endingShot) >= startY + 8, "Bowser must have dropped through the collapsed bridge");
+        assert.equal(endingShot.events.some(event => event.type === "courseClear"), false);
         await observe({ mode: "PLAYING" }, `${theme} resume ending`, () => page.getByTestId("resume").click());
       }
       const cleared = await observe({ cleared: true, mode: "CLEARED" }, `${theme} clear`, undefined, timeoutMs);
@@ -161,6 +186,9 @@ export async function samples(evidence: string, origin: string) {
       const dialog = await page.getByTestId("clear-dialog").evaluate(el => ({ hidden: (el as HTMLElement).hidden, text: el.textContent }));
       assert.equal(dialog.hidden, false);
       assert(dialog.text && /클리어/.test(dialog.text));
+      if (theme === "castle") {
+        assert(cleared.events.some(event => event.type === "courseClear" && event.ending === "castle"));
+      }
       if (theme !== "castle") await capture(theme, "ending");
       await hold(page, []);
       actions.push({ outcome: `${theme}-cleared`, tick: cleared.runtime?.tick, ending: cleared.runtime?.ending });
