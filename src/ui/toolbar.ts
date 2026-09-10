@@ -46,21 +46,24 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
   if (!actions) throw new Error("Editor header actions missing");
   if (options.onOpenLibrary) {
     const library = headerButton("보관함", "open-library");
+    library.title = "보관함 열기";
     library.addEventListener("click", options.onOpenLibrary, { signal: options.signal });
     actions.append(library);
   }
   const exportButton = headerButton("내보내기", "export-course");
+  exportButton.title = "코스 JSON 내보내기";
   exportButton.disabled = options.onExport === undefined;
   if (options.onExport) exportButton.addEventListener("click", options.onExport, { signal: options.signal });
   actions.append(exportButton);
   if (options.onImport) {
     const importButton = headerButton("가져오기", "import-course-button");
+    importButton.title = "코스 JSON 가져오기";
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json,application/json,.smb1.json";
     input.dataset["testid"] = "import-course";
     input.setAttribute("aria-label", "코스 파일 가져오기");
-    input.style.cssText = "position:absolute;width:44px;height:44px;opacity:0.01;overflow:hidden;";
+    input.className = "editor-file-input";
     importButton.addEventListener("click", () => input.click(), { signal: options.signal });
     input.addEventListener("change", () => {
       const file = input.files?.[0];
@@ -71,15 +74,18 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
   }
   if (options.onPlayCursor) {
     const cursor = headerButton("커서에서 테스트", "play-cursor");
+    cursor.title = "커서가 가리키는 칸에서 테스트 (Space 점프 · ← → 이동)";
     cursor.addEventListener("click", options.onPlayCursor, { signal: options.signal });
     actions.append(cursor);
   }
   if (options.onPlaySandbox) {
     const sandbox = headerButton("목표 없이 테스트", "play-sandbox");
+    sandbox.title = "목표 없이 플레이 테스트";
     sandbox.addEventListener("click", options.onPlaySandbox, { signal: options.signal });
     actions.append(sandbox);
   }
   const play = headerButton("▶ 플레이", "play-start", "editor-play");
+  play.title = "처음부터 플레이 (← → 이동 · Space 점프 · Shift/X 달리기 · Esc 일시정지)";
   play.disabled = options.onPlayStart === undefined;
   if (options.onPlayStart) play.addEventListener("click", options.onPlayStart, { signal: options.signal });
   actions.append(play);
@@ -103,6 +109,7 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
   }
   const viewing = document.createElement("div"); viewing.className = "editor-tool-group";
   const home = document.createElement("button"); home.type = "button"; home.textContent = "시작 위치"; home.dataset["testid"] = "viewport-home";
+  home.title = "시작 위치로 화면 이동 (Home)";
   home.addEventListener("click", options.onHome, { signal: options.signal });
   const gridLabel = document.createElement("label"); gridLabel.className = "editor-grid-toggle";
   const grid = document.createElement("input"); grid.type = "checkbox"; grid.checked = true; grid.dataset["testid"] = "viewport-grid";
@@ -110,6 +117,7 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
   const zooms = document.createElement("div"); zooms.className = "editor-zooms"; zooms.setAttribute("role", "group"); zooms.setAttribute("aria-label", "화면 배율");
   const zoomButtons = EDITOR_ZOOMS.map(zoom => {
     const button = document.createElement("button"); button.type = "button"; button.textContent = `${zoom}×`; button.dataset["testid"] = `zoom-${zoom}`; button.setAttribute("aria-label", `${zoom}배 확대`);
+    button.title = `${zoom}배 픽셀 확대`;
     button.addEventListener("click", () => options.onZoom(zoom), { signal: options.signal }); zooms.append(button); return { button, zoom };
   });
   viewing.append(home, gridLabel, zooms); tools.append(group, viewing);

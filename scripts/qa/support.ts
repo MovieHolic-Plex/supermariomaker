@@ -14,7 +14,7 @@ export function options(args: readonly string[]) {
     options: { scenario: { type: "string" }, evidence: { type: "string" } },
   });
   assert(values.scenario && values.evidence, "Required: --scenario ID[,ID...] --evidence DIR");
-  const implemented = ["boot", "boot-error", "audio-gallery", "audio-blocked", "asset-sheet", "asset-missing", "fixture-load", "fixture-reject", "movement", "movement-edge", "blocks", "blocks-edge", "enemies-ground", "enemies-ground-edge", "editor-shell", "editor-focus", "platforms", "platforms-edge", "hazards", "hazards-edge", "water", "water-edge", "paint-history", "paint-history-edge", "catalog", "catalog-invalid", "areas", "areas-edge", "storage", "storage-failure", "goals", "goals-edge", "selection", "selection-edge", "library", "library-conflict", "play-isolation", "play-isolation-edge", "files", "files-invalid", "schema-roundtrip", "schema-reject"] as const;
+  const implemented = ["boot", "boot-error", "audio-gallery", "audio-blocked", "asset-sheet", "asset-missing", "fixture-load", "fixture-reject", "movement", "movement-edge", "blocks", "blocks-edge", "enemies-ground", "enemies-ground-edge", "editor-shell", "editor-focus", "platforms", "platforms-edge", "hazards", "hazards-edge", "water", "water-edge", "paint-history", "paint-history-edge", "catalog", "catalog-invalid", "areas", "areas-edge", "storage", "storage-failure", "goals", "goals-edge", "selection", "selection-edge", "library", "library-conflict", "play-isolation", "play-isolation-edge", "files", "files-invalid", "schema-roundtrip", "schema-reject", "samples", "samples-invalid", "capacity", "capacity-reject", "polish", "polish-regression"] as const;
   const scenarios = values.scenario.split(",").map((value) => {
     const scenario = implemented.find((id) => id === value);
     assert(scenario, `Unimplemented or unknown scenario: ${value}`);
@@ -53,8 +53,6 @@ export function assertErrors(errors: readonly BrowserError[], fault: "none" | "b
         return !(error.url === `${origin}/app.js` && /Failed to load resource: net::ERR_FAILED/.test(error.text))
           && !(error.kind === "console" && error.text.startsWith("Application load failed "));
       case "html-404":
-        // A plain-text 404 document has no inline favicon; Chrome also asks
-        // for the default icon. The scenario asserts both actual HTTP statuses.
         return !([`${origin}/missing.html`, `${origin}/favicon.ico`].includes(error.url)
           && /Failed to load resource:.*404/.test(error.text));
       default: {
@@ -70,8 +68,6 @@ export function assertErrors(errors: readonly BrowserError[], fault: "none" | "b
   }
 }
 
-// Injected before navigation, not shipped in the app. Observes real DOM startup,
-// including fast imports, without polling or a product mutation/success hook.
 export function installBootObserver() {
   Object.defineProperty(globalThis, "__qaBootReady", { value: new Promise<void>((resolve, reject) => {
     const observer = new MutationObserver(() => {
@@ -91,9 +87,6 @@ export async function assertPortFree() {
   await probe.stop(true);
 }
 
-/** TASK6's proven native Chrome launch/teardown, made available to new scenarios
- * without changing the independently owned movement scenario. No daily-driver profile.
- */
 export async function nativeChrome(evidence: string) {
   const profile = await mkdtemp(resolve(evidence, "chrome-profile-"));
   const args = ["--no-first-run", "--no-default-browser-check", "--force-device-scale-factor=1",
@@ -117,8 +110,6 @@ export async function nativeChrome(evidence: string) {
     try {
       if (browser?.isConnected()) await (await browser.newBrowserCDPSession()).send("Browser.close");
     } finally {
-      // Close CDP before joining the native child. Explicitly terminate our owned
-      // launcher if still present; cleanup must not depend on Chrome background shutdown timing.
       if (browser) await browser.close();
       if (child.exitCode === null) { terminationRequested = true; child.kill(); }
       await bounded(child.exited, "owned Chrome termination");

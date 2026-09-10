@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright-core";
 import type { Page } from "playwright-core";
 import { GALLERY_PAGES } from "../../src/render/asset-gallery";
-import { PIXELS, WORLD_THEMES, WORLD_PALETTES } from "../../src/assets/pixels";
+import { ASSET_KEYS, PIXELS, WORLD_THEMES, WORLD_PALETTES } from "../../src/assets/pixels";
 import { getFrame, THEME_BACKGROUNDS } from "../../src/assets/manifest";
 import { bounded, json } from "./support";
 
@@ -103,10 +103,10 @@ export async function assetSheet(evidence: string, origin: string) {
       captures.push({ id, theme, keys: [], scales: [scale], checkedPixels: 0,
         ...await capture(page, join(evidence, `${id}.png`)) });
     }
-    assert.equal(captures.length, 64);
+    assert.equal(captures.length, GALLERY_PAGES.length + WORLD_THEMES.length * 2);
     assert.deepEqual(errors, []);
     await json(join(evidence, "capture-manifest.json"), { status: "PASS", origin, browser: browser.version(),
-      inventory: 112, frameThemeScalePreviews: 896, captures, errors,
+      inventory: ASSET_KEYS.length, frameThemeScalePreviews: ASSET_KEYS.length * WORLD_THEMES.length * 2, captures, errors,
       visualReview: "Pending independent image-capable reviewer; pixel/compositor assertions are not aesthetic approval." });
   } finally {
     await json(join(evidence, "browser-errors.json"), errors);

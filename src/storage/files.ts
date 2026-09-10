@@ -28,7 +28,7 @@ export type ImportCourseFileResult =
 const encoder = new TextEncoder();
 const tooLarge = {
   ok: false,
-  error: { code: "file_too_large" as const, path: "$", message: "Course files may not exceed 32 MiB of UTF-8" },
+  error: { code: "file_too_large" as const, path: "$", message: "코스 파일은 UTF-8 기준 32 MiB를 넘을 수 없습니다." },
 } as const;
 
 function errorName(error: unknown): string {

@@ -21,6 +21,9 @@ import { selection, selectionEdge } from "./qa/selection";
 import { library, libraryConflict } from "./qa/library";
 import { playIsolation, playIsolationEdge } from "./qa/play-isolation";
 import { files, filesInvalid, schemaRoundtrip, schemaReject } from "./qa/files";
+import { samples, samplesInvalid } from "./qa/samples";
+import { capacity, capacityReject } from "./qa/capacity";
+import { polish, polishRegression } from "./qa/polish";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -36,7 +39,6 @@ let preview: ReturnType<typeof Bun.spawn> | undefined;
 let previewExit: number | null = null;
 try {
   await assertPortFree();
-  // Rebuild every invocation, so a stale dist can never be accepted as QA proof.
   const build = Bun.spawn([process.execPath, "run", "build"], {
     stdout: Bun.file(`${evidence}/build.txt`), stderr: "pipe",
   });
@@ -130,6 +132,12 @@ try {
       case "files-invalid": await filesInvalid(directory, origin); break;
       case "schema-roundtrip": await schemaRoundtrip(directory, origin); break;
       case "schema-reject": await schemaReject(directory, origin); break;
+      case "samples": await samples(directory, origin); break;
+      case "samples-invalid": await samplesInvalid(directory, origin); break;
+      case "capacity": await capacity(directory, origin); break;
+      case "capacity-reject": await capacityReject(directory, origin); break;
+      case "polish": await polish(directory, origin); break;
+      case "polish-regression": await polishRegression(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

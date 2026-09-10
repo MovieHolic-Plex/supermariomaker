@@ -20,7 +20,8 @@ export function renderHud(node: HTMLElement, runtime: Runtime, mode: string): vo
   node.dataset["timer"] = model.timer === null ? "unlimited" : String(model.timer);
   node.dataset["ending"] = model.ending;
   node.dataset["mode"] = mode;
+  node.dataset["tick"] = String(runtime.tick);
   const timer = model.timer === null ? "무제한" : String(model.timer).padStart(3, "0");
   const status = model.defeated ? "피격" : mode === "PAUSED" ? "일시정지" : mode === "CLEARED" ? "클리어" : mode === "GAME_OVER" ? "게임 오버" : mode === "DEAD" ? "재시도" : "플레이 중";
-  node.textContent = `${status} | 틱 ${runtime.tick}\n점수 ${model.score} · 코인 ${model.coins} · 목숨 ${model.lives} · 시간 ${timer}`;
+  node.textContent = `${status}\n점수 ${model.score} · 코인 ${model.coins} · 목숨 ${model.lives} · 시간 ${timer}`;
 }
