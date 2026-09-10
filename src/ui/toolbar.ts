@@ -1,36 +1,44 @@
 import type { PaintTool } from "../editor/paint";
 import { EDITOR_ZOOMS, type EditorZoom } from "../editor/viewport";
 
+export type EditorTool = PaintTool | "select";
 export interface ToolbarOptions {
   readonly title: string;
   readonly signal: AbortSignal;
   readonly onTitleDraft: (title: string) => void;
+  readonly onTitleCommit: (title: string) => void;
   readonly onZoom: (zoom: EditorZoom) => void;
   readonly onHome: () => void;
   readonly onGrid: (visible: boolean) => void;
-  readonly onTool: (tool: PaintTool) => void;
+  readonly onTool: (tool: EditorTool) => void;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
 }
 export function createToolbar(document: Document, options: ToolbarOptions) {
   const header = document.createElement("header"); header.className = "editor-header"; header.dataset["testid"] = "editor-toolbar";
   header.innerHTML = `<div class="editor-brand"><span class="editor-brand-mark" aria-hidden="true">M</span><div><strong>코스 메이커</strong><small>워크스페이스 · 미리보기</small></div></div>
-    <label class="editor-title-label">코스 제목 <span>입력 초안 · 원본에 반영되지 않음</span><input data-testid="course-title" maxlength="80" autocomplete="off" spellcheck="false"></label>
+    <label class="editor-title-label">코스 제목 <span>Enter로 적용 · 입력 중에는 초안</span><input data-testid="course-title" maxlength="80" autocomplete="off" spellcheck="false"></label>
     <div class="editor-header-actions"><button type="button" data-testid="export-course" disabled>내보내기</button><button type="button" data-testid="play-start" class="editor-play" disabled>▶ 플레이</button></div>`;
   const title = header.querySelector("input");
   if (!title) throw new Error("Editor title input missing");
   title.value = options.title;
   title.addEventListener("input", () => options.onTitleDraft(title.value), { signal: options.signal });
+  title.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    options.onTitleCommit(title.value);
+  }, { signal: options.signal });
   const tools = document.createElement("nav"); tools.className = "editor-tools"; tools.dataset["testid"] = "editor-tools"; tools.setAttribute("aria-label", "편집 도구와 보기 설정");
   const group = document.createElement("div"); group.className = "editor-tool-group";
   const buttons = new Map<string, HTMLButtonElement>();
   for (const [id, label] of [["tool-paint", "그리기"], ["tool-erase", "지우기"], ["tool-fill", "채우기"], ["tool-select", "선택"], ["undo", "실행 취소"], ["redo", "다시 실행"]]) {
     const button = document.createElement("button"); button.type = "button"; button.dataset["testid"] = id; button.textContent = label ?? "";
-    if (id === "tool-select") {
-      button.disabled = true; button.title = "선택 도구는 아직 사용할 수 없습니다";
-    } else if (id === "undo" || id === "redo") {
+    if (id === "undo" || id === "redo") {
       button.disabled = true; button.title = id === "undo" ? "실행 취소 (Ctrl+Z)" : "다시 실행 (Ctrl+Y)";
       button.addEventListener("click", id === "undo" ? options.onUndo : options.onRedo, { signal: options.signal });
+    } else if (id === "tool-select") {
+      button.title = "선택 · 마퀴와 이동 (Ctrl+C/V, Delete)";
+      button.addEventListener("click", () => options.onTool("select"), { signal: options.signal });
     } else {
       const tool: PaintTool = id === "tool-paint" ? "paint" : id === "tool-erase" ? "erase" : "fill";
       button.title = label ?? "";
@@ -52,8 +60,8 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
   viewing.append(home, gridLabel, zooms); tools.append(group, viewing);
   return { header, tools, setTitle(value: string) { title.value = value; }, setZoom(value: EditorZoom) {
     for (const { button, zoom } of zoomButtons) button.setAttribute("aria-pressed", String(value === zoom));
-  }, setTool(tool: PaintTool | null) {
-    for (const [id, value] of [["tool-paint", "paint"], ["tool-erase", "erase"], ["tool-fill", "fill"]] as const) {
+  }, setTool(tool: EditorTool | null) {
+    for (const [id, value] of [["tool-paint", "paint"], ["tool-erase", "erase"], ["tool-fill", "fill"], ["tool-select", "select"]] as const) {
       buttons.get(id)?.setAttribute("aria-pressed", String(tool === value));
     }
   }, setHistory(counts: Readonly<{ undo: number; redo: number }>) {

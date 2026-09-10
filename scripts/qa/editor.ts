@@ -135,7 +135,8 @@ async function verifyRenderedPixels(page: Page) {
 export async function editorShell(page: Page, evidence: string, resizeToReference = true) {
   const actions: unknown[] = [], captures: unknown[] = [];
   const original = await snapshot(page);
-  for (const id of ["tool-select", "play-start", "export-course"]) assert(await page.getByTestId(id).isDisabled(), `${id} must not imply implemented authoring`);
+  assert.equal(await page.getByTestId("tool-select").isEnabled(), true, "checkbox 16 enables the selection tool");
+  for (const id of ["play-start", "export-course"]) assert(await page.getByTestId(id).isDisabled(), `${id} must not imply implemented authoring`);
   for (const id of ["tool-paint", "tool-erase", "tool-fill"]) assert(await page.getByTestId(id).isEnabled(), `${id} must be available for paint authoring`);
   assert(await page.getByTestId("undo").isDisabled(), "empty history has no undo");
   assert(await page.getByTestId("redo").isDisabled(), "empty history has no redo");

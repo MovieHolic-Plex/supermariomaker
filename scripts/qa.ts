@@ -17,6 +17,7 @@ import { catalogInvalid, catalogScenario, paintHistory, paintHistoryEdge } from 
 import { areas, areasEdge } from "./qa/areas";
 import { storage, storageFailure } from "./qa/storage";
 import { goals, goalsEdge } from "./qa/goals";
+import { selection, selectionEdge } from "./qa/selection";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -116,6 +117,8 @@ try {
       case "storage-failure": await storageFailure(directory, origin); break;
       case "goals": await goals(directory, origin); break;
       case "goals-edge": await goalsEdge(directory, origin); break;
+      case "selection": await selection(directory, origin); break;
+      case "selection-edge": await selectionEdge(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

@@ -1,6 +1,7 @@
 import { createArea, deleteArea, linkPipes, placePipe, previewResize, renameArea, resizeArea, setAreaTheme, warpLabels } from "../editor/areas";
-import { deleteObjects, placeObject, setObjectProperties } from "../editor/commands";
+import { deleteObjects, placeObject, setCourseFields, setObjectProperties } from "../editor/commands";
 import type { EditorHistory } from "../editor/history";
+import { commitCourseProperties } from "../editor/selection";
 import { getFrame } from "../assets/manifest";
 import { CATALOG_CATEGORIES, createObject, OBJECT_CATALOG, SPAWNED_CATALOG, TILE_CATALOG, type SpawnedKind } from "../level/catalog";
 import type { AreaV1, CourseV1, ObjectKind, Theme, TileKind, ValidationResult } from "../level/types";
@@ -15,6 +16,9 @@ export type InspectorHost = Readonly<{
   createId: () => string;
   onCommitted: (selectAreaId?: string) => void;
   onRejected: () => void;
+  onPlaceStart: () => void;
+  onPlaceFlag: () => void;
+  onPlaceCastle: () => void;
 }>;
 
 /** Uses the production atlas renderer; CSS enlarges its logical pixels. */
@@ -55,7 +59,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
       row(field?.label ?? key, typeof value === "object" ? JSON.stringify(value) : String(value));
     }
   } else row("기본 속성", kind === "piranha" ? "연결할 토관이 필요합니다" : "배치 위치에서 결정됩니다");
-  const notice = document.createElement("p"); notice.className = "editor-notice"; notice.textContent = "타일 그리기·지우기·채우기를 사용할 수 있습니다. 토관 연결과 영역 편집은 아래에서 적용됩니다.";
+  const notice = document.createElement("p"); notice.className = "editor-notice"; notice.textContent = "타일 그리기·지우기·채우기를 사용할 수 있습니다. 선택 도구로 복사·이동하고, 시작/목표는 아래에서 배치합니다.";
   const draft = document.createElement("label");
   const error = document.createElement("p"); error.className = "editor-notice"; error.dataset["testid"] = "property-error"; error.hidden = true;
   if (kind === "platform") {
@@ -72,6 +76,40 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
     });
     draft.append(input);
   }
+
+  const coursePanel = document.createElement("section"); coursePanel.className = "editor-area-panel"; coursePanel.dataset["testid"] = "course-panel";
+  const courseHeading = document.createElement("h3"); courseHeading.className = "editor-section-heading"; courseHeading.textContent = "코스 속성";
+  const timerLabel = document.createElement("label"); timerLabel.append("제한 시간(초, 0=무제한)");
+  const timer = document.createElement("input"); timer.type = "number"; timer.dataset["testid"] = "course-timer";
+  timer.value = String(course.timerSeconds); timer.min = "0"; timer.max = "999"; timer.step = "1"; timer.autocomplete = "off";
+  const timerError = document.createElement("p"); timerError.className = "editor-notice"; timerError.dataset["testid"] = "course-timer-error"; timerError.hidden = true;
+  const showTimer = (message: string) => { timerError.hidden = false; timerError.textContent = message; timer.setCustomValidity(message); };
+  const hideTimer = () => { timerError.hidden = true; timerError.textContent = ""; timer.setCustomValidity(""); };
+  timer.addEventListener("input", () => {
+    const result = setCourseFields(host.history.document(), { timerSeconds: Number(timer.value) });
+    if (result.ok) hideTimer();
+    else showTimer(`${result.error.code}:${result.error.path}`);
+  });
+  timer.addEventListener("change", () => {
+    const outcome = commitCourseProperties(host.history, { timerSeconds: Number(timer.value) });
+    if (outcome.status === "committed") host.onCommitted();
+    else if (outcome.status === "rejected") {
+      const result = setCourseFields(host.history.document(), { timerSeconds: Number(timer.value) });
+      showTimer(result.ok ? "rejected" : `${result.error.code}:${result.error.path}`);
+      host.onRejected();
+    }
+  });
+  timerLabel.append(timer);
+  const placeStart = document.createElement("button"); placeStart.type = "button"; placeStart.dataset["testid"] = "place-start"; placeStart.textContent = "시작 위치";
+  placeStart.addEventListener("click", () => host.onPlaceStart());
+  const placeFlag = document.createElement("button"); placeFlag.type = "button"; placeFlag.dataset["testid"] = "place-flag"; placeFlag.textContent = "깃발 목표";
+  placeFlag.addEventListener("click", () => host.onPlaceFlag());
+  const placeCastle = document.createElement("button"); placeCastle.type = "button"; placeCastle.dataset["testid"] = "place-castle"; placeCastle.textContent = "성 목표";
+  placeCastle.addEventListener("click", () => host.onPlaceCastle());
+  const placeActions = document.createElement("div"); placeActions.className = "editor-area-actions";
+  placeActions.append(placeStart, placeFlag, placeCastle);
+  coursePanel.append(courseHeading, timerLabel, timerError, placeActions);
+
   const areaPanel = document.createElement("section"); areaPanel.className = "editor-area-panel"; areaPanel.dataset["testid"] = "area-panel";
   const areaHeading = document.createElement("h3"); areaHeading.className = "editor-section-heading"; areaHeading.textContent = "영역 관리";
   const areaError = document.createElement("p"); areaError.className = "editor-notice"; areaError.dataset["testid"] = "area-error"; areaError.hidden = true;
@@ -210,7 +248,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
   pipeActions.append(placePipeBtn, placeWarpBtn, linkApply, deletePipe, warpApply);
   pipePanel.append(pipeHeading, pipeActions, linkA, linkB, slots[0]!, slots[1]!, slots[2]!, warpOut);
 
-  root.append(heading, subheading, hero, properties, notice);
+  root.append(heading, subheading, hero, properties, notice, coursePanel);
   if (kind === "platform") root.append(draft, error);
   root.append(areaPanel, pipePanel);
 }
