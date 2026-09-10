@@ -34,7 +34,13 @@ export interface RuntimeArea {
   /** Runtime terrain only. Coordinate key = y * source.width + x; stable ID is independent of kind. */
   readonly tiles: Map<number, TileCell>;
   platforms: PlatformFeatureState;
+  collapsedGoalIds: string[];
 }
+export interface TimerState { remaining: number; pulse: number }
+export type EndingState =
+  | Readonly<{ kind: "none" }>
+  | Readonly<{ kind: "flag"; goalId: string; elapsed: number; phase: "slide" | "walk" | "wait"; flagY: number; poleX: number; poleBottom: number; height: number }>
+  | Readonly<{ kind: "castle"; goalId: string; elapsed: number; phase: "collapse" | "fall" | "wait"; bowserId?: string }>;
 export interface Runtime {
   readonly course: CourseV1;
   readonly areas: Map<string, RuntimeArea>;
@@ -55,12 +61,20 @@ export interface Runtime {
   hazards: HazardState;
   water: WaterState;
   transition: TransitionState;
+  timer: TimerState;
+  ending: EndingState;
 }
+export type GoalEvent =
+  | Readonly<{ type: "timer"; tick: number; remaining: number }>
+  | Readonly<{ type: "flag-grab"; tick: number; goalId: string }>
+  | Readonly<{ type: "axe"; tick: number; goalId: string }>
+  | Readonly<{ type: "bridge-collapse"; tick: number; goalId: string }>
+  | Readonly<{ type: "courseClear"; tick: number; ending: "flag" | "castle" }>;
 export type GameEvent =
   | Readonly<{ type: "jump"; tick: number }>
   | Readonly<{ type: "contact"; tick: number; contact: Contact }>
   | BlockEvent | ItemEvent | ProgressEvent | GroundEvent | PlatformEvent | ClimbEvent | SpecialEvent | HazardEvent | WaterEvent
-  | TransitionEvent;
+  | TransitionEvent | GoalEvent;
 
 /** Validates the spawn at this boundary. Goal-free permission belongs to the host's explicit action. */
 export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Runtime {
@@ -70,7 +84,7 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
   const runtime: Runtime = {
     course: copy, areas: new Map(copy.areas.map(source => {
       const area: RuntimeArea = { source, tiles: new Map(source.tiles.map(tile => [tile.y * source.width + tile.x, { ...tile }])),
-        platforms: { areaId: source.id, bodies: [] } };
+        platforms: { areaId: source.id, bodies: [] }, collapsedGoalIds: [] };
       area.platforms = createPlatformState(area);
       return [source.id, area];
     })),
@@ -81,6 +95,7 @@ export function createRuntime(course: CourseV1, spawnOverride?: CourseStart): Ru
     special: { actors: new Map(), pending: [], nextId: 1, overloadedEnemies: false, overloadedProjectiles: false },
     hazards: { actors: new Map(), pending: [], nextId: 1 }, climb: createClimbState(),
     water: { actors: new Map(), pending: [], nextId: 1 }, transition: createTransitionState(),
+    timer: { remaining: copy.timerSeconds, pulse: 0 }, ending: { kind: "none" },
     player: { x: start.x, y: start.y, vx: 0, vy: 0, form: "small", crouched: false, grounded: false, facing: 1, skidding: false, risingTicks: 0, swimCooldown: 0 }, contacts: [],
   };
   const support = sweepAxis(currentArea(runtime), playerBounds(runtime.player), 1 / PHYSICS.snap, "y");
@@ -111,11 +126,13 @@ export function snapshot(runtime: Runtime) {
   return structuredClone({ tick: runtime.tick, seed: runtime.seed, areaId: runtime.areaId, transition: runtime.transition,
     player: runtime.player, contacts: runtime.contacts, climb: runtime.climb, platforms: currentArea(runtime).platforms,
     progress: runtime.progress, combat: runtime.combat, blocks: runtime.blocks, items: runtime.items,
+    timer: runtime.timer, ending: runtime.ending,
     ground: { actors: [...runtime.ground.actors.values()], stompChain: runtime.ground.stompChain },
     special: { actors: [...runtime.special.actors.values()], pending: [...runtime.special.pending], nextId: runtime.special.nextId,
       overloadedEnemies: runtime.special.overloadedEnemies, overloadedProjectiles: runtime.special.overloadedProjectiles },
     hazards: { actors: [...runtime.hazards.actors.values()], pending: [...runtime.hazards.pending], nextId: runtime.hazards.nextId },
     water: { actors: [...runtime.water.actors.values()], pending: [...runtime.water.pending], nextId: runtime.water.nextId },
-    areas: [...runtime.areas.values()].map(area => ({ id: area.source.id, tiles: [...area.tiles.values()], platforms: area.platforms })) });
+    areas: [...runtime.areas.values()].map(area => ({ id: area.source.id, tiles: [...area.tiles.values()],
+      platforms: area.platforms, collapsedGoalIds: [...area.collapsedGoalIds] })) });
 }
 export type RuntimeSnapshot = ReturnType<typeof snapshot>;

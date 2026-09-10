@@ -42,6 +42,7 @@ export function colliders(area: RuntimeArea, region: Bounds, excludeIds?: Readon
         if (excludeIds?.has(object.id)) break;
         result.push({ id: object.id, ...objectBounds(object), source: { kind: "object", objectId: object.id, part: "body" } }); break;
       case "castleGoal": {
+        if (area.collapsedGoalIds.includes(object.id)) break;
         const bridge = object.props.bridge, id = `${object.id}:bridge`;
         if (excludeIds?.has(id)) break;
         result.push({ id, x: bridge.x * 16, y: bridge.y * 16, width: bridge.width * 16, height: 16,
@@ -54,7 +55,6 @@ export function colliders(area: RuntimeArea, region: Bounds, excludeIds?: Readon
     if (excludeIds?.has(body.id)) continue;
     result.push({ id: body.id, ...body.bounds, source: { kind: "object", objectId: body.id, part: "body" } });
   }
-  // No bottom floor: falling into a pit stays a fall; death/lives belong to task 14.
   const boundaries: Collider[] = [
     { id: `${source.id}:boundary:left`, x: -16, y: Math.min(region.y, 0), width: 16, height: Math.max(region.height, source.height * 16) + Math.abs(region.y), source: { kind: "boundary", side: "left" } },
     { id: `${source.id}:boundary:right`, x: source.width * 16, y: Math.min(region.y, 0), width: 16, height: Math.max(region.height, source.height * 16) + Math.abs(region.y), source: { kind: "boundary", side: "right" } },

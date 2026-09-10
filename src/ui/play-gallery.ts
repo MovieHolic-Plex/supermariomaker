@@ -1,18 +1,18 @@
 import { attachInput, EMPTY_INPUT } from "../input";
 import type { InputFrame, PauseReason } from "../input";
 import { FixedClock } from "../game/clock";
-import { createRuntime, currentArea, snapshot } from "../game/state";
+import { snapshot } from "../game/state";
 import type { GameEvent, Runtime, RuntimeSnapshot } from "../game/state";
-import { step } from "../game/step";
+import { createRun, restartRun, retryRun, stepRun } from "../game/run";
+import type { Run } from "../game/run";
 import type { CourseV1 } from "../level/types";
 import { validatePreview } from "../level/validate";
 import { mountFixtureGallery } from "./fixture-gallery";
 import { playView, renderPlay } from "./play-view";
-
-const currentAreaName = (runtime: Runtime) => currentArea(runtime).source.name;
+import { renderHud } from "./hud";
 
 export interface PlayObservation {
-  readonly mode: "READY" | "PLAYING" | "PAUSED";
+  readonly mode: "READY" | "PLAYING" | "PAUSED" | "DEAD" | "CLEARED" | "GAME_OVER";
   readonly reason: PauseReason | null;
   readonly runtime: RuntimeSnapshot | null;
   readonly input: InputFrame;
@@ -30,7 +30,7 @@ declare global { interface Window { readonly __qa?: PlayQA } }
 /** Temporary movement lab, not the editor-to-play integration (task 17). */
 export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void }> {
   const events = new AbortController(), clock = new FixedClock();
-  let authored: CourseV1 | null = null, runtime: Runtime | null = null;
+  let authored: CourseV1 | null = null, session: Run | null = null;
   let mode: PlayObservation["mode"] = "READY", reason: PauseReason | null = null;
   let lastInput = EMPTY_INPUT, gameEvents: GameEvent[] = [], raf: number | null = null, disposed = false;
   const pending = new Set<() => void>();
@@ -46,36 +46,65 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
     .movement-play button, .movement-entry button { min-height:44px; margin:0 8px 12px 0; padding:8px 16px; }
     .movement-play output { display:block; margin:12px 0; font-variant-numeric:tabular-nums; }
     .movement-play input { display:block; width:100%; min-height:44px; margin-top:8px; }
+    .movement-play [data-testid="clear-dialog"], .movement-play [data-testid="game-over"] { margin:12px 0; padding:12px; border:2px solid var(--border); }
     @media(max-width:900px) { .movement-play .movement-layout { grid-template-columns:1fr; } }
   `;
   entry.className = "movement-entry"; panel.className = "movement-play"; panel.hidden = true;
   const start = document.createElement("button"); start.type = "button"; start.dataset["testid"] = "play-start"; start.textContent = "목표 없이 이동 테스트 시작"; start.disabled = true;
   const status = document.createElement("output"); status.dataset["testid"] = "play-status"; status.setAttribute("aria-live", "polite"); status.textContent = "아래에서 코스 파일을 선택해 주세요.";
   entry.append(style, start, status);
-  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · ↑ 덩굴 · Shift / X 달리기·불꽃 · Space / Z 점프·수영 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>블록 · 아이템 · 지상 적 밟기 · 등껍질 연속 공격 · 불꽃 사용 가능<br>움직이는 발판 · 스프링 · 덩굴 타기 · 수중 수영 가능 · 타이머 · 완료 판정은 아직 없습니다.</p></section></div>`;
+  panel.innerHTML = `<h1>이동 실험실</h1><p>← → / A D 이동 · ↑ 덩굴 · Shift / X 달리기·불꽃 · Space / Z 점프·수영 · ↓ / S 웅크리기 · Esc 일시정지</p><div class="movement-layout"><div></div><section><p>60 Hz 고정 시뮬레이션 · 256 × 240 픽셀<br>블록 · 아이템 · 지상 적 밟기 · 등껍질 연속 공격 · 불꽃 사용 가능<br>움직이는 발판 · 스프링 · 덩굴 타기 · 수중 수영 · 타이머 · 깃발/성 완료</p></section></div>`;
   const canvasSlot = panel.querySelector(".movement-layout > div"), controls = panel.querySelector("section");
   if (!canvasSlot || !controls) throw new Error("Movement layout missing");
   const canvas = document.createElement("canvas"); canvas.dataset["testid"] = "game-canvas"; canvas.tabIndex = 0; canvas.setAttribute("aria-label", "마리오 이동 테스트. 방향키와 스페이스로 조작합니다."); canvasSlot.append(canvas);
   const hud = document.createElement("output"); hud.dataset["testid"] = "hud"; controls.append(hud);
   const overload = document.createElement("output"); overload.dataset["testid"] = "spawn-overload"; overload.hidden = true; overload.textContent = "스폰 과부하"; controls.append(overload);
+  const clearDialog = document.createElement("section");
+  clearDialog.dataset["testid"] = "clear-dialog"; clearDialog.hidden = true; clearDialog.setAttribute("role", "status");
+  controls.append(clearDialog);
+  const gameOver = document.createElement("section");
+  gameOver.dataset["testid"] = "game-over"; gameOver.hidden = true; gameOver.setAttribute("role", "status");
+  gameOver.textContent = "게임 오버";
+  controls.append(gameOver);
   const button = (id: string, text: string, action: () => void) => {
     const element = document.createElement("button"); element.type = "button"; element.dataset["testid"] = id; element.textContent = text;
     element.addEventListener("click", action, { signal: events.signal }); controls.append(element); return element;
   };
-  const observation = (): PlayObservation => structuredClone({ mode, reason, runtime: runtime ? snapshot(runtime) : null,
-    input: lastInput, events: gameEvents, clock: clock.state, view: runtime ? playView(runtime) : null });
+  const runtimeOf = (): Runtime | null => session?.runtime ?? null;
+  const observation = (): PlayObservation => structuredClone({ mode, reason, runtime: session ? snapshot(session.runtime) : null,
+    input: lastInput, events: gameEvents, clock: clock.state, view: session ? playView(session.runtime) : null });
   const emit = () => root.dispatchEvent(new CustomEvent<PlayObservation>("play-state", { bubbles: true, detail: observation() }));
+  const syncTerminal = () => {
+    if (!session) return;
+    retryButton.hidden = session.mode !== "DEAD";
+    clearDialog.hidden = session.mode !== "CLEARED";
+    gameOver.hidden = session.mode !== "GAME_OVER";
+    if (session.mode === "CLEARED") {
+      const ending = session.runtime.ending.kind === "castle" ? "castle" : "flag";
+      clearDialog.dataset["ending"] = ending;
+      clearDialog.textContent = ending === "castle" ? "성 클리어" : "깃발 클리어";
+    } else {
+      delete clearDialog.dataset["ending"];
+      clearDialog.textContent = "";
+    }
+  };
   const render = () => {
+    const runtime = runtimeOf();
     if (runtime) {
       renderPlay(canvas, runtime);
+      renderHud(hud, runtime, mode);
       const over = runtime.special.overloadedEnemies || runtime.special.overloadedProjectiles;
       overload.hidden = !over;
       overload.textContent = runtime.special.overloadedEnemies && runtime.special.overloadedProjectiles ? "스폰 과부하 · 적 128 · 발사체 128"
         : runtime.special.overloadedEnemies ? "스폰 과부하 · 적 128" : "스폰 과부하 · 발사체 128";
-      hud.textContent = `${runtime.combat.defeated ? "피격 · 처음부터 다시 눌러 재시작" : mode === "PAUSED" ? "일시정지 · 재개 버튼을 눌러 주세요" : "플레이 중"} | 틱 ${runtime.tick}\n영역 ${currentAreaName(runtime)} · X ${runtime.player.x.toFixed(2)} · Y ${runtime.player.y.toFixed(2)}\n점수 ${runtime.progress.score} · 코인 ${runtime.progress.coins} · 목숨 ${runtime.progress.lives}\n${runtime.player.form === "small" ? "작은 마리오" : runtime.player.form === "super" ? "슈퍼 마리오" : "파이어 마리오"} · 스타 ${runtime.combat.starTicks}${over ? " · 스폰 과부하" : ""}`;
     }
+    syncTerminal();
   };
   const cancelFrame = () => { if (raf !== null) cancelAnimationFrame(raf); raf = null; };
+  const halt = (next: PlayObservation["mode"]) => {
+    mode = next; clock.pause(); input.setActive(false); cancelFrame(); lastInput = EMPTY_INPUT;
+    pauseButton.hidden = true; resumeButton.hidden = true; render(); emit();
+  };
   const pause = (why: PauseReason) => {
     if (mode !== "PLAYING") return;
     mode = "PAUSED"; reason = why; clock.pause(); input.setActive(false); cancelFrame(); lastInput = EMPTY_INPUT; gameEvents = [];
@@ -85,33 +114,43 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
   const frame = (now: number) => {
     raf = null;
     clock.frame(now, () => {
-      if (!runtime) throw new Error("Playing runtime missing");
-      lastInput = input.consume(); gameEvents = step(runtime, lastInput); emit();
+      if (!session) throw new Error("Playing runtime missing");
+      lastInput = input.consume(); gameEvents = stepRun(session, lastInput); emit();
+      if (session.mode === "DEAD" || session.mode === "GAME_OVER" || session.mode === "CLEARED") {
+        halt(session.mode);
+      }
     });
     render();
     if (mode === "PLAYING") raf = requestAnimationFrame(frame);
   };
   const resume = () => {
-    if (!runtime || disposed || document.hidden) return;
+    if (!session || disposed || document.hidden) return;
     mode = "PLAYING"; reason = null; input.setActive(true); clock.resume(); lastInput = EMPTY_INPUT; gameEvents = [];
-    pauseButton.hidden = false; resumeButton.hidden = true; canvas.focus(); render(); emit();
+    pauseButton.hidden = false; resumeButton.hidden = true; retryButton.hidden = true; clearDialog.hidden = true; gameOver.hidden = true;
+    canvas.focus(); render(); emit();
     raf = requestAnimationFrame(frame);
   };
   const begin = () => {
     if (!authored) return;
     const checked = validatePreview(authored, { allowNoGoal: true });
     if (!checked.ok) { status.textContent = `시작 불가: ${checked.error.message} (${checked.error.code})`; return; }
-    cancelFrame(); clock.pause(); input.setActive(false); runtime = createRuntime(authored);
+    cancelFrame(); clock.pause(); input.setActive(false); session = createRun(authored);
     loaderRoot.hidden = true; entry.hidden = true; panel.hidden = false; resume();
   };
   const pauseButton = button("pause", "일시정지", () => pause("button"));
   const resumeButton = button("resume", "명시적으로 재개", resume); resumeButton.hidden = true;
-  button("restart-course", "처음부터 다시", begin);
+  const retryButton = button("retry", "다시 도전", () => {
+    if (!session || session.mode !== "DEAD") return;
+    retryRun(session); resume();
+  }); retryButton.hidden = true;
+  button("restart-course", "처음부터 다시", () => {
+    if (!session) { begin(); return; }
+    restartRun(session); resume();
+  });
   button("return-editor", "파일 미리보기로 돌아가기", () => {
-    cancelFrame(); clock.pause(); input.setActive(false); runtime = null; mode = "READY"; reason = null; lastInput = EMPTY_INPUT; gameEvents = [];
+    cancelFrame(); clock.pause(); input.setActive(false); session = null; mode = "READY"; reason = null; lastInput = EMPTY_INPUT; gameEvents = [];
     panel.hidden = true; loaderRoot.hidden = false; entry.hidden = false; start.focus(); emit();
   });
-  // A real form control also makes the shortcut focus boundary inspectable without a runtime hook.
   const noteLabel = document.createElement("label"), note = document.createElement("input"); note.type = "text"; note.dataset["testid"] = "play-note";
   noteLabel.textContent = "테스트 메모 (저장하지 않음)"; noteLabel.append(note); controls.append(noteLabel);
   start.addEventListener("click", begin, { signal: events.signal });
@@ -119,7 +158,7 @@ export function mountPlayGallery(root: HTMLElement): Readonly<{ dispose(): void 
     if (disposed) return;
     disposed = true; cancelFrame(); clock.pause(); input.dispose(); events.abort();
     for (const cancel of [...pending]) cancel();
-    Reflect.deleteProperty(window, "__qa"); gallery.dispose(); authored = null; runtime = null; root.replaceChildren();
+    Reflect.deleteProperty(window, "__qa"); gallery.dispose(); authored = null; session = null; root.replaceChildren();
     root.dispatchEvent(new CustomEvent("play-cleanup", { bubbles: true, detail: { rafCancelled: raf === null, inputDisposed: input.disposed,
       listenersAborted: events.signal.aborted, subscriptions: pending.size, debtMs: clock.state.debtMs, qaRemoved: !("__qa" in window) } }));
   };

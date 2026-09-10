@@ -29,7 +29,7 @@ export interface HazardBody {
 export type HazardForm =
   | { kind: "podoboo"; cooldown: number; waiting: boolean }
   | { kind: "firebar"; length: number; direction: "cw" | "ccw"; speed: "slow" | "normal" | "fast"; angle: number }
-  | { kind: "bowser"; hits: number; jumpTicks: number; flameTicks: number }
+  | { kind: "bowser"; hits: number; jumpTicks: number; flameTicks: number; falling?: boolean }
   | { kind: "bowserFlame" }
   | { kind: "defeated"; previousKind: "bowser" | "podoboo" | "firebar" | "bowserFlame"; cause: "fireball" | "pit" };
 export type HazardActor = HazardBody & HazardForm;
@@ -145,6 +145,13 @@ export function moveHazards(runtime: Runtime, state: HazardState, viewport: Boun
         break;
       }
       case "bowser": {
+        if (actor.falling) {
+          actor.vx = 0;
+          actor.vy = Math.min(PHYSICS.fallCap, actor.vy + PHYSICS.gravity);
+          actor.y = snapPosition(actor.y + actor.vy);
+          actor.grounded = false;
+          break;
+        }
         if (actor.x <= actor.originX - BOWSER_PATROL) actor.facing = 1;
         else if (actor.x >= actor.originX + BOWSER_PATROL) actor.facing = -1;
         actor.vx = actor.facing * BOWSER_SPEED;
@@ -194,7 +201,7 @@ export function resolveHazardContacts(runtime: Runtime, state: HazardState, fram
     }
   }
   const fireHits = (combat.fireballs ?? []).flatMap(fireball => actors.flatMap(({ actor, previous }) => {
-    if (actor.kind !== "bowser") return [];
+    if (actor.kind !== "bowser" || actor.falling) return [];
     const hit = motionHit(fireball.previous, fireball.bounds, previous, hazardBounds(actor));
     return hit ? [{ fireball, actor, ...hit }] : [];
   })).sort((a, b) => a.time - b.time || compareId(a.actor.id, b.actor.id) || compareId(a.fireball.id, b.fireball.id));
@@ -212,6 +219,7 @@ export function resolveHazardContacts(runtime: Runtime, state: HazardState, fram
   const player = runtime.player;
   const playerHits: { actor: HazardActor; time: number; normalY: -1 | 0 | 1 }[] = [];
   for (const { actor, previous } of actors) {
+    if (actor.kind === "bowser" && actor.falling) continue;
     if (actor.kind === "firebar") {
       for (const box of firebarHurtBoxes(actor)) {
         const hit = motionHit(playerBounds(combat.previousPlayer), playerBounds(player), box, box);

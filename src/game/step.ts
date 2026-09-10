@@ -18,10 +18,16 @@ import { applyUnderwaterIntent, isUnderwater } from "./water";
 import { commitWaterSpawns, moveWaterEnemies, resolveWaterContacts } from "./enemies-water";
 import type { WaterEvent } from "./enemies-water";
 import { stepTransition } from "./transitions";
+import { advanceEnding, resolveTerminal } from "./goals";
 
 /** One active 60Hz tick. Host must consume input edges once, never once per render. */
 export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   const player = runtime.player, events: GameEvent[] = [];
+  if (runtime.ending.kind !== "none") {
+    runtime.tick++;
+    advanceEnding(runtime, events);
+    return events;
+  }
   // Defeat is final until the host recreates this runtime; later contacts cannot rebound or collect.
   if (runtime.combat.defeated) return events;
   const previousPlayer = { ...player };
@@ -189,7 +195,8 @@ export function step(runtime: Runtime, input: InputFrame): GameEvent[] {
   commitSpecialSpawns(runtime);
   commitHazardSpawns(runtime);
   commitWaterSpawns(runtime);
-  // 6. Terminal conditions and death UI/life consumption belong to task 14.
+  // 6. Terminal: pit, timer, then goal. Lethal damage already recorded wins the tie.
+  resolveTerminal(runtime, events);
   return events;
 }
 

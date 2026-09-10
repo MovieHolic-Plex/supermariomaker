@@ -42,7 +42,10 @@ describe("authoritative movement", () => {
     step(runtime, { ...EMPTY_INPUT, jump: { held: false, pressed: false, released: true } });
     expect(runtime.player.vy).toBeCloseTo(-1.58);
     advance(runtime, 100, held("jump")); expect(runtime.player.y).toBe(208);
-    currentArea(runtime).tiles.clear(); advance(runtime, 100); expect(runtime.player.vy).toBe(6);
+    currentArea(runtime).tiles.clear();
+    runtime.player.y = 80; runtime.player.vy = 0; runtime.player.grounded = false;
+    advance(runtime, 20); expect(runtime.player.vy).toBe(6); expect(runtime.player.y).toBeLessThan(240);
+    advance(runtime, 80); expect(runtime.combat.defeated).toBe(true);
   });
   test("held gravity applies to exactly 18 rising ticks, then ordinary gravity", () => {
     const runtime = createRuntime(createMovementFixture()); step(runtime, jump); advance(runtime, 17, held("jump"));

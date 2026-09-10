@@ -17,7 +17,9 @@ export type ProgressEvent =
   | Readonly<{ type: "form"; tick: number; from: PlayerState["form"]; to: PlayerState["form"]; sourceId: string }>
   | Readonly<{ type: "starStart" | "starEnd" | "invulnerabilityEnd"; tick: number }>
   | Readonly<{ type: "damage"; tick: number; hit: DamageHit; from: PlayerState["form"]; to: PlayerState["form"] }>
-  | Readonly<{ type: "playerDefeated"; tick: number; hit: DamageHit }>;
+  | Readonly<{ type: "playerDefeated"; tick: number; hit: DamageHit }>
+  | Readonly<{ type: "lifeLost"; tick: number; lives: number }>
+  | Readonly<{ type: "gameOver"; tick: number }>;
 export function awardScore(runtime: Runtime, reason: "coin" | "block" | "powerup" | "goal", events: GameEvent[]): void {
   const points = SCORE[reason]; runtime.progress.score += points;
   events.push({ type: "score", tick: runtime.tick, reason, points, total: runtime.progress.score });
@@ -49,7 +51,7 @@ export function advanceCombat(runtime: Runtime, events: GameEvent[]): void {
   if (combat.starTicks > 0 && --combat.starTicks === 0) events.push({ type: "starEnd", tick: runtime.tick });
   if (combat.invulnerabilityTicks > 0 && --combat.invulnerabilityTicks === 0) events.push({ type: "invulnerabilityEnd", tick: runtime.tick });
 }
-/** Enemy integration calls this during interactions. Terminal UI/life consumption is task 14. */
+/** Enemy integration calls this during interactions. Life consumption belongs to run.ts. */
 export function damagePlayer(runtime: Runtime, hit: DamageHit, events: GameEvent[]): DamageResult {
   const combat = runtime.combat, player = runtime.player;
   if (combat.defeated) return "ignored";

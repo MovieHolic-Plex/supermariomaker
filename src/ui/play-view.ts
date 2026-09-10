@@ -16,6 +16,9 @@ export function playView(runtime: Runtime) {
   const viewport = runtimeViewport(runtime), camera = { x: viewport.x, y: viewport.y };
   let key: AssetKey;
   if (runtime.combat.defeated) key = "mario.small.death";
+  else if (runtime.ending.kind === "flag" && runtime.ending.phase === "slide") key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
+  else if (runtime.ending.kind === "flag") key = player.vx !== 0 ? frameAt(`mario.${player.form}.run`, runtime.tick, 6) : `mario.${player.form}.idle`;
+  else if (runtime.ending.kind === "castle") key = `mario.${player.form}.idle`;
   else if (runtime.transition.kind === "pipe" && player.form !== "small") key = `mario.${player.form}.crouch`;
   else if (runtime.climb.vineId !== null) key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
   else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
@@ -67,7 +70,7 @@ export function playView(runtime: Runtime) {
     let key: AssetKey;
     switch (actor.kind) {
       case "podoboo": key = actor.vy < 0 ? "enemy.podoboo.rise" : "enemy.podoboo.fall"; break;
-      case "bowser": key = actor.flameTicks > 112 ? "enemy.bowser.openMouth" : frameAt("enemy.bowser.walk", runtime.tick, 8); break;
+      case "bowser": key = actor.falling ? "enemy.bowser.walk1" : actor.flameTicks > 112 ? "enemy.bowser.openMouth" : frameAt("enemy.bowser.walk", runtime.tick, 8); break;
       case "bowserFlame": key = "enemy.bowser.flame"; break;
     }
     return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
@@ -92,26 +95,42 @@ export function playView(runtime: Runtime) {
   });
   return { camera, ground, special, hazards, water, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
     theme: area.source.theme, areaName: area.source.name, warpLabels: warpLabelMarks(runtime.course, area.source),
+    ending: runtime.ending, collapsedGoalIds: [...area.collapsedGoalIds],
     player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
 }
 export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
   const area = currentArea(runtime), view = playView(runtime);
-  // Only play replaces authored ground actors and platform/spring bodies. Diagnostic/editor previews retain every object.
   const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && !runtime.special.actors.has(object.id)
-    && !runtime.hazards.actors.has(object.id) && !runtime.water.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring");
+    && !runtime.hazards.actors.has(object.id) && !runtime.water.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring"
+    && object.kind !== "castleGoal");
   renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera),
     ...view.platforms, ...view.ground, ...view.special, ...view.hazards, ...view.water] });
   const context = canvasContext(canvas), options = { theme: view.theme };
   for (const object of area.source.objects) if (object.kind === "flagGoal") {
     const x = object.x - view.camera.x, y = object.y - view.camera.y;
     drawPole(context, { x, y, heightCells: object.props.height }, options);
-    drawSprite(context, { key: "decor.flag", x, y: y - object.props.height * 16 + 24 }, options);
+    const flagY = runtime.ending.kind === "flag" && runtime.ending.goalId === object.id
+      ? runtime.ending.flagY - view.camera.y
+      : y - object.props.height * 16 + 24;
+    drawSprite(context, { key: "decor.flag", x, y: flagY }, options);
+    drawSprite(context, { key: "decor.smallCastle", x: x + 48, y }, options);
+  }
+  for (const object of area.source.objects) if (object.kind === "castleGoal") {
+    const collapsed = area.collapsedGoalIds.includes(object.id);
+    if (!collapsed) {
+      const bridge = object.props.bridge;
+      for (let cell = 0; cell < bridge.width; cell++) {
+        drawSprite(context, { key: "decor.bridge", x: (bridge.x + cell) * 16 + 8 - view.camera.x, y: bridge.y * 16 + 16 - view.camera.y }, options);
+      }
+    }
+    if (runtime.ending.kind !== "castle" || runtime.ending.goalId !== object.id) {
+      drawSprite(context, { key: "decor.axe", x: object.x - view.camera.x, y: object.y - view.camera.y }, options);
+    }
   }
   for (const actor of runtime.items.actors) {
     if (actor.areaId !== runtime.areaId) continue;
     const x = actor.x - view.camera.x, y = actor.y - view.camera.y;
     if (actor.kind === "vine") {
-      // Clip the final partial segment so visual growth matches the authoritative climb extent.
       context.save(); context.beginPath(); context.rect(x - 8, y - actor.height, 16, actor.height); context.clip();
       for (let offset = 0; offset < actor.height; offset += 16) drawSprite(context, { key: "decor.vineSegment", x, y: y - offset }, options);
       if (actor.height > 0) drawSprite(context, { key: "decor.vineTop", x, y: y - actor.height + 16 }, options);
