@@ -63,7 +63,11 @@ export function playView(runtime: Runtime) {
     return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
   });
   const hazards = [...runtime.hazards.actors.values()].flatMap(actor => {
-    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    if (actor.areaId !== runtime.areaId) return [];
+    if (actor.kind === "defeated") {
+      if (actor.previousKind !== "bowser" || actor.cause !== "fireball") return [];
+      return [{ id: actor.id, key: "enemy.bowser.defeated" as const, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+    }
     if (actor.kind === "firebar") {
       return firebarBalls(actor).map((ball, index) => ({ id: `${actor.id}:${index}`, key: "enemy.firebar" as AssetKey, x: ball.x, y: ball.y + 8, flipX: false }));
     }

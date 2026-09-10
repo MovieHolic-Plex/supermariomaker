@@ -1,4 +1,4 @@
-// Hand-authored SMB1-style Mario poses; faces right except the front-facing death.
+// Hand-authored SMB1-style Mario poses; faces right except the front-facing inverted death.
 // Palette indices follow the shared pixel contract. Renderer owns color and mirroring.
 // Pure pixel tables intentionally remain together as the player asset family.
 const SMALL_ROWS = {
@@ -183,22 +183,22 @@ const SMALL_ROWS = {
     '.........4444...',
   ],
   death: [
-    '.....222222.....',
+    '..44........44..',
+    '.4444......4444.',
+    '..333......333..',
+    '...333....333...',
     '....22222222....',
-    '...2222222222...',
-    '...4433333344...',
-    '...4331331334...',
-    '...4333333334...',
-    '....33111133....',
-    '.333.333333.333.',
-    '.33344222244333.',
+    '..332222222233..',
+    '333.22222222.333',
     '..344272272443..',
     '...4422222244...',
+    '...4433333344...',
+    '...4313311334...',
+    '...4333333334...',
+    '....33111133....',
+    '.....222222.....',
     '....22222222....',
-    '....222..222....',
-    '...2222..2222...',
-    '..4444....4444..',
-    '..444......444..',
+    '.....22222......',
   ],
 } as const;
 
