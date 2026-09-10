@@ -8,7 +8,7 @@ import type { PlayObservation } from "../../src/ui/play-gallery";
 import { createBlocksFixture } from "../../tests/fixtures/blocks";
 import type { BlocksCase } from "../../tests/fixtures/blocks";
 import { fixtureValue } from "../../tests/fixtures/factory";
-import { bounded, json, viewport } from "./support";
+import { bounded, closeOwnedBrowser, json, viewport } from "./support";
 
 interface Match {
   mode?: PlayObservation["mode"]; event?: GameEvent["type"]; form?: "small" | "super" | "fire";
@@ -163,7 +163,7 @@ async function blocksScenario(evidence: string, origin: string, edge: boolean) {
         await json(`${evidence}/last-state.json`, await page.evaluate(() => window.__qa?.snapshot() ?? null));
         if (!cleanup) await page.screenshot({ path: `${evidence}/failure-surface.png` });
       }
-    } finally { await context.close(); contextClosed = true; await browser.close(); }
+    } finally { await context.close(); contextClosed = true; await closeOwnedBrowser(browser); }
     await Promise.all([json(`${evidence}/actions.json`, actions), json(`${evidence}/png-manifest.json`, captures), json(`${evidence}/errors.json`, errors), json(`${evidence}/console.json`, consoleMessages),
       json(`${evidence}/cleanup.json`, { host: cleanup, contextClosed, browserConnected: browser.isConnected(), isolatedProfile: true, clock: "unmodified native RAF" })]);
   }

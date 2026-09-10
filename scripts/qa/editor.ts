@@ -9,7 +9,7 @@ import { screenToWorld } from "../../src/editor/viewport";
 import { getFrame, type AssetKey } from "../../src/assets/manifest";
 import { rasterizeFrame } from "../../src/render/assets";
 import { createNewCourse, TILE_CATALOG } from "../../src/level/catalog";
-import { bounded, installBootObserver, json } from "./support";
+import { bounded, closeOwnedBrowser, installBootObserver, json } from "./support";
 
 const PRIVATE_PORT = 4185;
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
@@ -64,7 +64,7 @@ async function capture(page: Page, path: string) {
     const checkbox = document.querySelector('[data-testid="viewport-grid"]');
     if (!checkbox || checkbox.getBoundingClientRect().width !== 18 || checkbox.getBoundingClientRect().height !== 18) throw new Error("Boot styles changed the approved grid checkbox geometry");
     const targets: unknown[] = [];
-    for (const element of document.querySelectorAll('.editor-view button, .editor-view select, .editor-view input:not([type="checkbox"]), .editor-grid-toggle')) {
+    for (const element of document.querySelectorAll('.editor-view button, .editor-view select, .editor-view input:not([type="checkbox"]):not([type="file"]), .editor-grid-toggle')) {
       const rect = element.getBoundingClientRect();
       if (rect.width < 44 || rect.height < 44) throw new Error(`Small target ${element.getAttribute("data-testid")}: ${rect.width}x${rect.height}`);
       targets.push({ id: element.getAttribute("data-testid"), width: rect.width, height: rect.height });
@@ -300,7 +300,7 @@ async function normalScenario(evidence: string, baseUrl: string, scenario: "edit
     }
     assert.deepEqual(errors, []); passed = true;
   } finally {
-    await browser.close();
+    await closeOwnedBrowser(browser);
     await json(`${evidence}/actions.json`, { passed, scenario, baseUrl, sessions, errors });
     await json(`${evidence}/cleanup.json`, { contexts: cleanup, browserDisconnected: !browser.isConnected(), observationResourcesReleasedWithContexts: cleanup.every(item => item.closed) });
   }
@@ -382,7 +382,7 @@ async function privateProof(evidence: string) {
   } catch (error) {
     await json(`${evidence}/failure.json`, { message: String(error), stack: error instanceof Error ? error.stack : null }); throw error;
   } finally {
-    try { if (browser) { await browser.close(); browserClosed = true; } }
+    try { if (browser) { await closeOwnedBrowser(browser); browserClosed = true; } }
     finally {
       if (server) await server.stop(true);
       const probe = Bun.serve({ hostname: "127.0.0.1", port: PRIVATE_PORT, fetch: () => new Response(null) }); await probe.stop(true); portFree = true;

@@ -6,7 +6,7 @@ import type { Page } from "playwright-core";
 import { GALLERY_PAGES } from "../../src/render/asset-gallery";
 import { ASSET_KEYS, PIXELS, WORLD_THEMES, WORLD_PALETTES } from "../../src/assets/pixels";
 import { getFrame, THEME_BACKGROUNDS } from "../../src/assets/manifest";
-import { bounded, json } from "./support";
+import { bounded, closeOwnedBrowser, json } from "./support";
 
 function observeGallery() {
   Object.defineProperty(globalThis, "__assetReady", { value: new Promise<void>(resolve => {
@@ -110,7 +110,7 @@ export async function assetSheet(evidence: string, origin: string) {
       visualReview: "Pending independent image-capable reviewer; pixel/compositor assertions are not aesthetic approval." });
   } finally {
     await json(join(evidence, "browser-errors.json"), errors);
-    await browser.close();
+    await closeOwnedBrowser(browser);
     await json(join(evidence, "browser-cleanup.json"), { browserClosed: true, contextsIsolated: true, serverOwned: false });
   }
 }
@@ -162,7 +162,7 @@ export async function assetMissing(evidence: string, origin: string, entryPath =
     assert.equal(errors.length, faultErrorCount, "Recovery must not introduce browser errors");
     await json(join(evidence, "fault.json"), { status: "PASS", origin, entryPath, browser: browser.version(), aborted, errors, failure, recovery });
   } finally {
-    await browser.close();
+    await closeOwnedBrowser(browser);
     await json(join(evidence, "fault-cleanup.json"), { browserClosed: true, serverOwned: false });
   }
 }

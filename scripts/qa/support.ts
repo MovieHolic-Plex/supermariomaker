@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { chromium } from "playwright-core";
+import { chromium, type Browser } from "playwright-core";
 
 export const origin = "http://127.0.0.1:4173";
 export const viewport = { width: 1280, height: 720 } as const;
@@ -37,6 +37,21 @@ export async function bounded<T>(operation: Promise<T>, label: string): Promise<
 
 export function json(path: string, value: unknown) {
   return Bun.write(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** Close Playwright and wait for the OS Chromium pid to exit. `browser.close()` can resolve while chrome.exe is still dying; the next scenario's launch then dies mid-screenshot or focus. */
+export async function closeOwnedBrowser(browser: Browser): Promise<void> {
+  const proc = (browser as Browser & { process?: () => { readonly exitCode: number | null; kill(): boolean; once(event: "exit", listener: () => void): unknown } | null }).process?.() ?? null;
+  const disconnected = browser.isConnected()
+    ? new Promise<void>(resolve => { browser.once("disconnected", () => resolve()); })
+    : Promise.resolve();
+  const exited = !proc || proc.exitCode !== null
+    ? Promise.resolve()
+    : new Promise<void>(resolve => { proc.once("exit", () => resolve()); });
+  if (browser.isConnected()) await browser.close();
+  await bounded(disconnected, "Playwright browser disconnected");
+  if (proc && proc.exitCode === null) proc.kill();
+  await bounded(exited, "owned Chromium process exit");
 }
 
 export type BrowserError = {
@@ -110,7 +125,7 @@ export async function nativeChrome(evidence: string) {
     try {
       if (browser?.isConnected()) await (await browser.newBrowserCDPSession()).send("Browser.close");
     } finally {
-      if (browser) await browser.close();
+      if (browser) await closeOwnedBrowser(browser);
       if (child.exitCode === null) { terminationRequested = true; child.kill(); }
       await bounded(child.exited, "owned Chrome termination");
       await Bun.write(`${evidence}/chrome-stderr.txt`, await stderr);

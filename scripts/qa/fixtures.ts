@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 import type { Page } from "playwright-core";
 import { parseCourse } from "../../src/level/serialize";
-import { bounded, json, viewport } from "./support";
+import { bounded, closeOwnedBrowser, json, viewport } from "./support";
 
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
 async function arm(page: Page, event: string, match: Readonly<Record<string, string | boolean>> = {}) {
@@ -203,7 +203,7 @@ async function fixtureScenario(evidence: string, origin: string, scenario: "load
     assert.equal(await page.getByTestId("fixture-gallery").count(), 0);
     assert.deepEqual(errors, []);
   } finally {
-    await browser.close();
+    await closeOwnedBrowser(browser);
     await Promise.all([
       json(`${evidence}/actions.json`, actions), json(`${evidence}/documents.json`, documents), json(`${evidence}/png-manifest.json`, captures), json(`${evidence}/errors.json`, errors),
       json(`${evidence}/cleanup.json`, { galleryDisposed, browserConnected: browser.isConnected(), browserClosed: true, context: "ephemeral", noAppTimersOrObjectURLs: true }),

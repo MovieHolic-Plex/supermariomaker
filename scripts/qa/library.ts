@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { chromium, type Page } from "playwright-core";
 import type { CourseV1 } from "../../src/level/types";
 import type { EditorViewState } from "../../src/ui/editor";
-import { bounded, installBootObserver, json } from "./support";
+import { bounded, closeOwnedBrowser, installBootObserver, json } from "./support";
 
 interface Snapshot { readonly state: EditorViewState; readonly course: CourseV1 }
 async function snapshot(page: Page): Promise<Snapshot> {
@@ -154,7 +154,7 @@ export async function library(evidence: string, origin: string) {
     assert.deepEqual(errors, []);
     passed = true;
   } finally {
-    await browser.close(); browserClosed = true;
+    await closeOwnedBrowser(browser); browserClosed = true;
     await json(`${evidence}/actions.json`, { passed, origin, errors, browser: browser.version() });
     await json(`${evidence}/cleanup.json`, { browserClosed, browserDisconnected: !browser.isConnected(), contextsClosed: true });
   }
@@ -242,7 +242,7 @@ export async function libraryConflict(evidence: string, origin: string) {
     assert.deepEqual(errors, []);
     passed = true;
   } finally {
-    await browser.close(); browserClosed = true;
+    await closeOwnedBrowser(browser); browserClosed = true;
     await json(`${evidence}/actions.json`, { passed, origin, errors, browser: browser.version() });
     await json(`${evidence}/cleanup.json`, { browserClosed, browserDisconnected: !browser.isConnected(), contextsClosed: true, pages: 2 });
   }

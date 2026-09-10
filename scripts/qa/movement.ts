@@ -11,7 +11,7 @@ import { EMPTY_INPUT } from "../../src/input";
 import type { PlayObservation } from "../../src/ui/play-gallery";
 import { createMovementFixture } from "../../tests/fixtures/movement";
 import { fixtureValue } from "../../tests/fixtures/factory";
-import { bounded, json, viewport } from "./support";
+import { bounded, closeOwnedBrowser, json, viewport } from "./support";
 
 interface Match { mode?: PlayObservation["mode"]; tick?: number; jump?: boolean; held?: "right" | "jump"; risingTicks?: number; apex?: boolean; grounded?: boolean; wall?: boolean }
 async function arm(page: Page, match: Match) {
@@ -82,7 +82,7 @@ async function nativeChrome(evidence: string, nativeFocus: boolean) {
           for (const proc of (await cdp.send("SystemInfo.getProcessInfo")).processInfo) pids.add(proc.id);
           await cdp.send("Browser.close");
         } catch (error) { failures.push(error); }
-        await browser.close();
+        await closeOwnedBrowser(browser);
       }
       try { exitResult = await bounded(exited.promise, "native Chrome process exit event"); }
       catch (error) { failures.push(error); child.kill(); exitResult = await bounded(exited.promise, "native Chrome termination event"); }

@@ -5,7 +5,7 @@ import { chromium, type Page } from "playwright-core";
 import type { EditorViewState } from "../../src/ui/editor";
 import type { CourseV1, TileCell } from "../../src/level/types";
 import { authoredContentEqual, serializeCourse } from "../../src/level/serialize";
-import { bounded, installBootObserver, json } from "./support";
+import { bounded, closeOwnedBrowser, installBootObserver, json } from "./support";
 
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
 
@@ -148,7 +148,7 @@ async function withPage(
     } finally { await context.close(); }
     assert.deepEqual(errors, []); passed = true;
   } finally {
-    await browser.close(); browserClosed = true;
+    await closeOwnedBrowser(browser); browserClosed = true;
     await json(`${evidence}/actions.json`, { passed, origin, errors, actions, browser: browser.version() });
     await json(`${evidence}/cleanup.json`, { browserClosed, browserDisconnected: !browser.isConnected(), contextsClosed: true });
   }

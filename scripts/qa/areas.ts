@@ -10,7 +10,7 @@ import { serializeCourse } from "../../src/level/serialize";
 import { createAreasPlayFixture } from "../../tests/fixtures/areas";
 import { fixtureValue } from "../../tests/fixtures/factory";
 import { createNormalEditor } from "./editor";
-import { bounded, json, nativeChrome, viewport } from "./support";
+import { bounded, closeOwnedBrowser, json, nativeChrome, viewport } from "./support";
 
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
 interface EditorSnap { readonly state: EditorViewState; readonly course: CourseV1; readonly proposals: readonly unknown[] }
@@ -152,7 +152,7 @@ async function runEditor(evidence: string, origin: string, edge: boolean): Promi
     } finally { await context.close(); }
     assert.deepEqual(errors, []); passed = true;
   } finally {
-    await browser.close(); browserClosed = true;
+    await closeOwnedBrowser(browser); browserClosed = true;
     await json(`${evidence}/editor-actions.json`, { passed, origin, errors, actions, captures, browser: browser.version() });
     await json(`${evidence}/editor-cleanup.json`, { browserClosed, browserDisconnected: !browser.isConnected(), contextsClosed: true });
   }

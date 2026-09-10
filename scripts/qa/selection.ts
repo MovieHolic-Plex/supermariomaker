@@ -6,7 +6,7 @@ import type { EditorViewState } from "../../src/ui/editor";
 import type { CourseV1, PlacedObject } from "../../src/level/types";
 import { serializeCourse } from "../../src/level/serialize";
 import { createNormalEditor } from "./editor";
-import { bounded, json } from "./support";
+import { bounded, closeOwnedBrowser, json } from "./support";
 
 const sha = (bytes: Uint8Array) => Bun.CryptoHasher.hash("sha256", bytes, "hex");
 interface Snapshot { readonly state: EditorViewState; readonly course: CourseV1; readonly proposals: readonly unknown[] }
@@ -90,7 +90,7 @@ async function withEditor(evidence: string, origin: string, run: (page: Page) =>
     } finally { await context.close(); }
     assert.deepEqual(errors, []); passed = true;
   } finally {
-    await browser.close(); browserClosed = true;
+    await closeOwnedBrowser(browser); browserClosed = true;
     await json(`${evidence}/actions.json`, { passed, origin, errors, actions, browser: browser.version() });
     await json(`${evidence}/cleanup.json`, { browserClosed, browserDisconnected: !browser.isConnected(), contextsClosed: true });
   }

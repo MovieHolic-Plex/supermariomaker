@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
-import { assertErrors, installBootObserver, json, origin, viewport } from "./support";
+import { assertErrors, closeOwnedBrowser, installBootObserver, json, origin, viewport } from "./support";
 import type { BrowserError } from "./support";
 
 export async function bootError(evidence: string) {
@@ -128,7 +128,7 @@ export async function bootError(evidence: string) {
       }
     }
   } finally {
-    await browser.close();
+    await closeOwnedBrowser(browser);
     await json(`${evidence}/cleanup.json`, { contexts, browserDisconnected: !browser.isConnected() });
     assert(contexts.every((context) => context.contextClosed && context.pagesClosed));
     assert.equal(browser.isConnected(), false);
