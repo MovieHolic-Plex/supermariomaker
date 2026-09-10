@@ -24,6 +24,7 @@ import { files, filesInvalid, schemaRoundtrip, schemaReject } from "./qa/files";
 import { samples, samplesInvalid } from "./qa/samples";
 import { capacity, capacityReject } from "./qa/capacity";
 import { polish, polishRegression } from "./qa/polish";
+import { builtFlow, builtFailure } from "./qa/built";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -138,6 +139,8 @@ try {
       case "capacity-reject": await capacityReject(directory, origin); break;
       case "polish": await polish(directory, origin); break;
       case "polish-regression": await polishRegression(directory, origin); break;
+      case "built-flow": await builtFlow(directory, origin); break;
+      case "built-failure": await builtFailure(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

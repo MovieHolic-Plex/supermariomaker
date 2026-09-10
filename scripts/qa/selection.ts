@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium, type Locator, type Page } from "playwright-core";
 import type { EditorViewState } from "../../src/ui/editor";
+import { OBJECT_CATALOG } from "../../src/level/catalog";
 import type { CourseV1, PlacedObject } from "../../src/level/types";
 import { serializeCourse } from "../../src/level/serialize";
 import { createNormalEditor } from "./editor";
@@ -42,6 +43,46 @@ async function capture(page: Page, path: string) {
   const png = await page.screenshot({ path, fullPage: false, animations: "disabled" });
   assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
   return { file: resolve(path), sha256: sha(png), bytes: png.byteLength };
+}
+async function captureCanvas(page: Page, path: string) {
+  const png = await page.getByTestId("editor-canvas").screenshot({ animations: "disabled" });
+  assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  await Bun.write(path, png);
+  return { file: resolve(path), sha256: sha(png), bytes: png.byteLength };
+}
+async function worldPixel(page: Page, x: number, y: number) {
+  return page.evaluate(({ x, y }) => {
+    const canvas = document.querySelector('[data-testid="editor-canvas"]');
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Editor canvas missing");
+    const qa = Reflect.get(globalThis, "__qa") as { getState(): EditorViewState };
+    const state = qa.getState();
+    const sx = Math.floor((x - state.viewport.x) * state.viewport.zoom * state.dpr);
+    const sy = Math.floor((y - state.viewport.y) * state.viewport.zoom * state.dpr);
+    const pixel = canvas.getContext("2d")?.getImageData(sx, sy, 1, 1).data;
+    if (!pixel) throw new Error(`Missing world pixel ${x},${y}`);
+    return [pixel[0] ?? 0, pixel[1] ?? 0, pixel[2] ?? 0, pixel[3] ?? 0];
+  }, { x, y });
+}
+async function inspectorDom(page: Page) {
+  return page.evaluate(() => {
+    const heading = document.querySelector('[data-testid="properties"] h2')?.textContent ?? null;
+    const preview = document.querySelector('[data-testid="preview-kind"]');
+    const panel = document.querySelector('[data-testid="object-properties"]');
+    const fields = [...document.querySelectorAll("[data-testid^='object-prop-'], [data-testid='property-length']")].map(node => ({
+      testid: node.getAttribute("data-testid"),
+      tag: node.tagName,
+      value: node instanceof HTMLInputElement || node instanceof HTMLSelectElement ? node.value : node.textContent,
+      ariaInvalid: node.getAttribute("aria-invalid"),
+      invalidClass: node.classList.contains("editor-field-invalid"),
+    }));
+    return {
+      heading,
+      previewKind: preview?.getAttribute("data-kind") ?? null,
+      previewLabel: preview?.textContent ?? null,
+      objectProperties: panel ? { kind: panel.getAttribute("data-kind"), objectId: panel.getAttribute("data-object-id") } : null,
+      fields,
+    };
+  });
 }
 async function writeSnapshot(course: CourseV1, path: string) {
   const serialized = serializeCourse(course); assert(serialized.ok);
@@ -119,10 +160,99 @@ export async function selection(evidence: string, origin: string) {
     assert.equal(await page.getByTestId("tool-select").isEnabled(), true);
     assert.equal(await page.getByTestId("export-course").isEnabled(), true);
     assert.equal(await page.getByTestId("play-start").isEnabled(), true);
+    assert.equal((await snapshot(page)).state.selection.objectIds.length, 0);
+    assert.equal(await page.getByTestId("object-properties").count(), 0);
+    assert.equal(await page.locator('[data-testid="properties"] h2').textContent(), "속성 미리보기");
+    await action(page, "category", () => page.getByTestId("category-devices").click());
+    await action(page, "palette", () => page.getByTestId("palette-platform").click());
+    assert.equal(await page.getByTestId("preview-kind").getAttribute("data-kind"), "platform");
+    assert.equal(await page.getByTestId("preview-kind").textContent(), OBJECT_CATALOG.platform.label);
+    assert.equal(await page.getByTestId("object-properties").count(), 0);
+    assert.equal(await page.getByTestId("property-length").inputValue(), String(OBJECT_CATALOG.platform.defaults.length));
+    assert.equal(await page.locator('[data-testid="properties"] h2').textContent(), "속성 미리보기");
+    const paletteDom = await inspectorDom(page);
+    await json(`${evidence}/inspector-palette.json`, paletteDom);
+    captures.push({
+      step: "palette-preview-unselected",
+      catalogDefaultLength: OBJECT_CATALOG.platform.defaults.length,
+      inspector: paletteDom,
+      ...(await capture(page, `${evidence}/palette-preview.png`)),
+    });
     const linked = await placeLinkedPipes(page);
     const originals = pipesOf(linked.course);
     const a = originals[0], b = originals[1];
     assert(a && b && a.kind === "pipe" && b.kind === "pipe");
+    await action(page, "tool", () => page.getByTestId("tool-select").click());
+    const pick = await worldPoint(page, a.x, a.y - 16);
+    await action(page, "pointer", () => page.mouse.move(pick.x, pick.y));
+    await action(page, "marquee-start", () => page.mouse.down());
+    await action(page, "marquee-commit", () => page.mouse.up());
+    const oneSelected = await snapshot(page);
+    assert.deepEqual(oneSelected.state.selection.objectIds, [a.id]);
+    assert.equal(await page.getByTestId("object-properties").getAttribute("data-kind"), "pipe");
+    assert.equal(await page.getByTestId("object-properties").getAttribute("data-object-id"), a.id);
+    assert.equal(await page.locator('[data-testid="properties"] h2').textContent(), "배치된 오브젝트 속성");
+    const heightField = page.getByTestId("object-prop-height");
+    await heightField.evaluate(node => { if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest", inline: "nearest" }); });
+    assert.equal(a.props.height, 2);
+    assert.equal(OBJECT_CATALOG.pipe.defaults.height, 3);
+    assert.equal(await heightField.inputValue(), String(a.props.height));
+    assert.notEqual(await heightField.inputValue(), String(OBJECT_CATALOG.pipe.defaults.height));
+    assert.equal(await page.getByTestId("object-prop-entrance").inputValue(), a.props.entrance);
+    const dest = a.props.destination;
+    assert(dest);
+    assert.equal(await page.getByTestId("object-prop-destination").inputValue(), `${dest.areaId}:${dest.pipeId}`);
+    assert.equal(await page.getByTestId("property-length").count(), 0);
+    const currentDom = await inspectorDom(page);
+    await json(`${evidence}/inspector-current.json`, currentDom);
+    captures.push({
+      step: "inspector-current-not-catalog-default",
+      placedHeight: a.props.height,
+      catalogHeight: OBJECT_CATALOG.pipe.defaults.height,
+      inspector: currentDom,
+      ...(await capture(page, `${evidence}/inspector-current.png`)),
+    });
+    const probeY = a.y - 96;
+    const pixelBefore = await worldPixel(page, a.x, probeY);
+    const canvasBefore = await captureCanvas(page, `${evidence}/pipe-height-before.png`);
+    const undoBefore = oneSelected.state.undoCount;
+    await heightField.fill("8");
+    await action(page, "command", () => heightField.press("Enter"));
+    const grown = await snapshot(page);
+    const grownPipe = objectById(grown.course, a.id);
+    assert(grownPipe && grownPipe.kind === "pipe");
+    assert.equal(grownPipe.props.height, 8);
+    assert.equal(grown.state.undoCount, undoBefore + 1);
+    const pixelAfter = await worldPixel(page, a.x, probeY);
+    assert.notDeepEqual(pixelAfter, pixelBefore);
+    const canvasAfter = await captureCanvas(page, `${evidence}/pipe-height-after.png`);
+    assert.notEqual(canvasAfter.sha256, canvasBefore.sha256);
+    captures.push({ step: "pipe-height-canvas-before", pixel: pixelBefore, height: 2, ...canvasBefore });
+    captures.push({ step: "pipe-height-canvas-after", pixel: pixelAfter, height: 8, undoCount: grown.state.undoCount, ...canvasAfter });
+    await page.getByTestId("editor-canvas").focus();
+    await action(page, "undo", () => page.keyboard.press("Control+Z"));
+    const undone = await snapshot(page);
+    const undonePipe = objectById(undone.course, a.id);
+    assert(undonePipe && undonePipe.kind === "pipe");
+    assert.equal(undonePipe.props.height, 2);
+    assert.equal(undone.state.undoCount, undoBefore);
+    assert.equal(undone.state.redoCount, grown.state.redoCount + 1);
+    const pixelUndone = await worldPixel(page, a.x, probeY);
+    assert.deepEqual(pixelUndone, pixelBefore);
+    const canvasUndone = await captureCanvas(page, `${evidence}/pipe-height-undone.png`);
+    captures.push({ step: "pipe-height-undo-one-step", pixel: pixelUndone, height: 2, undoCount: undone.state.undoCount, ...canvasUndone });
+    await page.getByTestId("editor-canvas").focus();
+    await action(page, "select", () => page.keyboard.press("Escape"));
+    assert.equal((await snapshot(page)).state.selection.objectIds.length, 0);
+    assert.equal(await page.getByTestId("object-properties").count(), 0);
+    assert.equal(await page.locator('[data-testid="properties"] h2').textContent(), "속성 미리보기");
+    assert.equal(await page.getByTestId("preview-kind").getAttribute("data-kind"), "platform");
+    assert.equal(await page.getByTestId("property-length").inputValue(), String(OBJECT_CATALOG.platform.defaults.length));
+    captures.push({
+      step: "palette-preview-after-deselect",
+      inspector: await inspectorDom(page),
+      ...(await capture(page, `${evidence}/palette-preview-after-deselect.png`)),
+    });
     await action(page, "tool", () => page.getByTestId("tool-select").click());
     const start = await worldPoint(page, Math.min(a.x, b.x) - 24, Math.min(a.y, b.y) - 48);
     const end = await worldPoint(page, Math.max(a.x, b.x) + 24, Math.max(a.y, b.y) + 8);
@@ -254,6 +384,16 @@ export async function selectionEdge(evidence: string, origin: string) {
     await action(page, "marquee-start", () => page.mouse.down());
     await action(page, "marquee-commit", () => page.mouse.up());
     assert.deepEqual((await snapshot(page)).state.selection.objectIds, [goomba.id]);
+    const emptyNote = page.getByTestId("object-prop-empty");
+    await emptyNote.evaluate(node => { if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest", inline: "nearest" }); });
+    assert.equal(await page.getByTestId("object-properties").getAttribute("data-kind"), "goomba");
+    assert.equal(await emptyNote.isVisible(), true);
+    assert.equal(await page.getByTestId("object-prop-height").count(), 0);
+    captures.push({
+      step: "goomba-readonly-empty-properties",
+      inspector: await inspectorDom(page),
+      ...(await capture(page, `${evidence}/goomba-readonly.png`)),
+    });
     await page.getByTestId("editor-canvas").focus();
     await action(page, "copy", () => page.keyboard.press("Control+C"));
     const oob = await worldPoint(page, -16, 208);
@@ -302,7 +442,63 @@ export async function selectionEdge(evidence: string, origin: string) {
     assert(castles.some(item => item.x === 192));
     captures.push({ step: "external-link-cleared-and-castle", copyId: copy.id, ...(await capture(page, `${evidence}/external-link.png`)) });
     assert.notEqual(beforePaste, withCastle.course);
+    const remaining = pipesOf(withCastle.course)[0];
+    assert(remaining && remaining.kind === "pipe");
+    await action(page, "tool", () => page.getByTestId("tool-select").click());
+    const hit = await worldPoint(page, remaining.x, remaining.y - 16);
+    await action(page, "pointer", () => page.mouse.move(hit.x, hit.y));
+    await action(page, "marquee-start", () => page.mouse.down());
+    await action(page, "marquee-commit", () => page.mouse.up());
+    assert.deepEqual((await snapshot(page)).state.selection.objectIds, [remaining.id]);
+    const beforeInvalid = await snapshot(page);
+    const beforeCanon = serializeCourse(beforeInvalid.course); assert(beforeCanon.ok);
+    const undoAtInvalid = beforeInvalid.state.undoCount;
+    const height = page.getByTestId("object-prop-height");
+    await height.evaluate(node => { if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest", inline: "nearest" }); });
+    await height.fill("1");
+    assert.equal(await height.inputValue(), "1");
+    const propError = page.getByTestId("object-prop-height-error");
+    assert.equal(await propError.isVisible(), true);
+    assert.match(await propError.textContent() ?? "", /invalid_value:.*height/);
+    assert.equal(await height.getAttribute("aria-invalid"), "true");
+    assert.equal(await height.evaluate(node => node.classList.contains("editor-field-invalid")), true);
+    const fieldBox = await assertFullyInViewport(page, height, "object-prop-height");
+    const propErrorBox = await assertFullyInViewport(page, propError, "object-prop-height-error");
+    assert(propErrorBox.y + 0.5 >= fieldBox.y, "object property error must sit with the field");
+    const rejectedWrite = await snapshot(page);
+    const afterCanon = serializeCourse(rejectedWrite.course); assert(afterCanon.ok);
+    assert.equal(afterCanon.value, beforeCanon.value);
+    assert.equal(rejectedWrite.state.undoCount, undoAtInvalid);
+    const live = objectById(rejectedWrite.course, remaining.id);
+    assert(live && live.kind === "pipe" && live.props.height === remaining.props.height);
+    const invalidDom = await inspectorDom(page);
+    await json(`${evidence}/inspector-invalid.json`, { ...invalidDom, fieldBox, errorBox: propErrorBox, errorText: await propError.textContent() });
+    captures.push({
+      step: "object-prop-height-1-preview-no-write",
+      height: live.props.height,
+      errorInViewport: true,
+      fieldBox,
+      errorBox: propErrorBox,
+      errorText: await propError.textContent(),
+      inspector: invalidDom,
+      ...(await capture(page, `${evidence}/object-prop-invalid.png`)),
+    });
+    await height.fill("");
+    assert.equal(await height.inputValue(), "");
+    assert.equal(await propError.isVisible(), true);
+    assert.match(await propError.textContent() ?? "", /invalid_value:.*height/);
+    assert.equal(await height.getAttribute("aria-invalid"), "true");
+    const malformed = await snapshot(page);
+    const malformedCanon = serializeCourse(malformed.course); assert(malformedCanon.ok);
+    assert.equal(malformedCanon.value, beforeCanon.value);
+    assert.equal(malformed.state.undoCount, undoAtInvalid);
+    captures.push({
+      step: "object-prop-height-empty-no-write",
+      errorText: await propError.textContent(),
+      inspector: await inspectorDom(page),
+      ...(await capture(page, `${evidence}/object-prop-malformed.png`)),
+    });
     await writeSnapshot(withCastle.course, `${evidence}/current.smb1.json`);
-    await json(`${evidence}/result.json`, { captures, timerUnchangedAt29: true, oobRejected: true });
+    await json(`${evidence}/result.json`, { captures, timerUnchangedAt29: true, oobRejected: true, objectPropUnchanged: true });
   });
 }
