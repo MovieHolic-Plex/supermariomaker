@@ -102,11 +102,10 @@ async function openSavedEditor(page: Page, origin: string) {
   await page.getByTestId("new-course").click();
   await page.getByTestId("course-title").fill("저장 검증");
   await arm(page, "normal-editor-ready", {}, "__readySignal");
-  await armSave(page, "saved");
   await page.getByTestId("create-course").click();
   await signal(page, "__readySignal");
   assert.equal(await page.getByTestId("editor-view").count(), 1);
-  await saveSignal(page);
+  await page.getByTestId("save-status").waitFor({ state: "visible", timeout: 10_000 });
   const opened = await snapshot(page);
   assert.equal(await page.getByTestId("save-status").getAttribute("data-status"), "saved");
   assert.match(await page.getByTestId("save-status").innerText(), /저장됨/);
@@ -159,6 +158,7 @@ export async function storage(evidence: string, origin: string) {
   const captures: unknown[] = [];
   await withPage(evidence, origin, async () => undefined, async page => {
     const opened = await openSavedEditor(page, origin);
+    await action(page, "home", () => page.getByTestId("viewport-home").click());
     await page.exposeBinding("__qaAfterDirty", async () => {
       captures.push({ step: "dirty-before-commit", ...(await capture(page, `${evidence}/dirty-before-save.png`)) });
     });
@@ -215,6 +215,7 @@ export async function storageFailure(evidence: string, origin: string) {
     await page.addInitScript(installAbortInstrument);
   }, async page => {
     await openSavedEditor(page, origin);
+    await action(page, "home", () => page.getByTestId("viewport-home").click());
     await action(page, "tool", () => page.getByTestId("tool-paint").click());
     await action(page, "category", () => page.getByTestId("category-items").click());
     await action(page, "palette", () => page.getByTestId("palette-coin").click());
@@ -231,12 +232,25 @@ export async function storageFailure(evidence: string, origin: string) {
     assert.match(await page.getByTestId("save-status").innerText(), /저장 실패/);
     assert.equal(await page.getByTestId("save-retry").isVisible(), true);
     assert.equal(await page.getByTestId("save-retry").isEnabled(), true);
-    assert.equal(await page.getByTestId("export-course").isDisabled(), true);
+    assert.equal(await page.getByTestId("export-course").isEnabled(), true);
     assert.deepEqual(failed.state.saveRecovery, ["retry", "export"]);
     const storedBeforeRetry = await idbCourse(page, failed.course.id);
     assert(storedBeforeRetry && typeof storedBeforeRetry === "object" && "document" in storedBeforeRetry);
     assert.equal(tileAt((storedBeforeRetry as { document: CourseV1 }).document, 12, 4)?.kind, undefined);
     captures.push({ step: "abort-retains-dirty-error", ...(await capture(page, `${evidence}/abort-error.png`)) });
+    const downloadWait = page.waitForEvent("download", { timeout: 10_000 });
+    await page.getByTestId("export-course").click();
+    const download = await downloadWait;
+    const exportPath = `${evidence}/unsaved-coin.smb1.json`;
+    await download.saveAs(exportPath);
+    const exportedBytes = await Bun.file(exportPath).bytes();
+    assert(exportedBytes.byteLength > 0, "export captured real downloaded bytes");
+    const exported = JSON.parse(new TextDecoder().decode(exportedBytes)) as CourseV1;
+    assert.equal(tileAt(exported, 12, 4)?.kind, "coin");
+    const afterExport = await snapshot(page);
+    assert.equal(afterExport.state.dirty, true);
+    assert.equal(afterExport.state.saveStatus, "failed");
+    captures.push({ step: "export-unsaved-coin", file: resolve(exportPath), bytes: exportedBytes.byteLength, sha256: sha(exportedBytes) });
     await armSave(page, "saved");
     await page.getByTestId("save-retry").click();
     await saveSignal(page);
@@ -247,6 +261,6 @@ export async function storageFailure(evidence: string, origin: string) {
     assert(storedAfter && typeof storedAfter === "object" && "document" in storedAfter);
     assert.equal(tileAt((storedAfter as { document: CourseV1 }).document, 12, 4)?.kind, "coin");
     captures.push({ step: "retry-saved", ...(await capture(page, `${evidence}/retry-saved.png`)) });
-    await json(`${evidence}/result.json`, { captures, abortedDirty: true, retrySaved: true, exportDisabled: true });
+    await json(`${evidence}/result.json`, { captures, abortedDirty: true, retrySaved: true, exportIncludedUnsavedCoin: true });
   });
 }

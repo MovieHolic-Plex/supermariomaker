@@ -58,6 +58,15 @@ describe("QA command contract", () => {
   test.each(["selection", "selection-edge", "selection,selection-edge", "paint-history,selection"]) ("accepts selection integration %s", scenario => {
     expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
   });
+  test.each(["library", "library-conflict", "library,library-conflict"]) ("accepts library integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
+  test.each(["play-isolation", "play-isolation-edge", "play-isolation,play-isolation-edge"]) ("accepts play isolation integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
+  test.each(["files", "files-invalid", "schema-roundtrip", "schema-reject", "files,files-invalid,schema-roundtrip,schema-reject"]) ("accepts files integration %s", scenario => {
+    expect(options(["--scenario", scenario, "--evidence", "artifacts"]).scenarios.join(",")).toBe(scenario);
+  });
   test.each(["blocks,blocks", "blocks-edge,unknown", "movement,movement", "movement-edge,unknown", "movement,", "fixture-load,fixture-load", "fixture-reject,unknown", "fixture-load,", "", "asset-sheet,", ",asset-missing", "asset-sheet,asset-sheet", "asset-missing,asset-missing", "asset-sheet,built-flow", "asset-missing,unknown", "unknown", "all", "boot,unknown", "boot,", "boot,boot", "audio-gallery,unknown", "audio-gallery,audio-gallery", "polish", "editor-shell,editor-shell", "editor-focus,editor-focus", "editor-shell,unknown", "editor-focus,unknown", "platforms,platforms", "platforms-edge,platforms-edge", "platforms,unknown", "platforms-edge,unknown", "hazards,hazards", "hazards-edge,hazards-edge", "hazards,unknown", "hazards-edge,unknown", "water,water", "water-edge,water-edge", "water,unknown", "water-edge,unknown", "paint-history,paint-history", "catalog,catalog", "paint-history,unknown", "catalog-invalid,unknown", "areas,areas", "areas-edge,areas-edge", "areas,unknown", "areas-edge,unknown", "storage,storage", "storage-failure,storage-failure", "storage,unknown", "storage-failure,unknown", "goals,goals", "goals-edge,goals-edge", "goals,unknown", "goals-edge,unknown", "selection,selection", "selection-edge,selection-edge", "selection,unknown", "selection-edge,unknown"])("rejects unsupported scenario %s", (scenario) => {
     expect(() => options(["--scenario", scenario, "--evidence", "artifacts"])).toThrow();
   });

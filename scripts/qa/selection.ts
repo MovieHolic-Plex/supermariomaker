@@ -117,8 +117,8 @@ export async function selection(evidence: string, origin: string) {
   const captures: unknown[] = [];
   await withEditor(evidence, origin, async page => {
     assert.equal(await page.getByTestId("tool-select").isEnabled(), true);
-    assert.equal(await page.getByTestId("export-course").isDisabled(), true);
-    assert.equal(await page.getByTestId("play-start").isDisabled(), true);
+    assert.equal(await page.getByTestId("export-course").isEnabled(), true);
+    assert.equal(await page.getByTestId("play-start").isEnabled(), true);
     const linked = await placeLinkedPipes(page);
     const originals = pipesOf(linked.course);
     const a = originals[0], b = originals[1];

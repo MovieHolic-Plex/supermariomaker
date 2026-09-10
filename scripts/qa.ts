@@ -18,6 +18,9 @@ import { areas, areasEdge } from "./qa/areas";
 import { storage, storageFailure } from "./qa/storage";
 import { goals, goalsEdge } from "./qa/goals";
 import { selection, selectionEdge } from "./qa/selection";
+import { library, libraryConflict } from "./qa/library";
+import { playIsolation, playIsolationEdge } from "./qa/play-isolation";
+import { files, filesInvalid, schemaRoundtrip, schemaReject } from "./qa/files";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -119,6 +122,14 @@ try {
       case "goals-edge": await goalsEdge(directory, origin); break;
       case "selection": await selection(directory, origin); break;
       case "selection-edge": await selectionEdge(directory, origin); break;
+      case "library": await library(directory, origin); break;
+      case "library-conflict": await libraryConflict(directory, origin); break;
+      case "play-isolation": await playIsolation(directory, origin); break;
+      case "play-isolation-edge": await playIsolationEdge(directory, origin); break;
+      case "files": await files(directory, origin); break;
+      case "files-invalid": await filesInvalid(directory, origin); break;
+      case "schema-roundtrip": await schemaRoundtrip(directory, origin); break;
+      case "schema-reject": await schemaReject(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });
