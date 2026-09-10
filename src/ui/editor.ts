@@ -51,6 +51,12 @@ export interface EditorViewOptions {
   readonly onCanvasPoint?: (point: Readonly<{ areaId: string; world: Point; cell: Point }>) => void;
   readonly onAuthoredChange?: (course: CourseV1) => void;
   readonly onSaveRetry?: () => void;
+  readonly onPlayStart?: () => void;
+  readonly onPlayCursor?: () => void;
+  readonly onPlaySandbox?: () => void;
+  readonly onExport?: () => void;
+  readonly onImport?: (file: File) => void;
+  readonly onOpenLibrary?: () => void;
 }
 export interface EditorView {
   readonly element: HTMLElement;
@@ -60,6 +66,9 @@ export interface EditorView {
   setCourse(course: CourseV1): void;
   setViewport(viewport: Viewport): void;
   setSaveStatus(status: EditorSaveStatus, detail?: Readonly<{ errorKind?: string | null; recovery?: readonly string[] | null }>): void;
+  history(): EditorHistory;
+  selection(): EditorSelection;
+  setSelection(selection: EditorSelection): void;
   dispose(): void;
 }
 
@@ -141,6 +150,12 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     onGrid: value => { grid = value; render("grid"); },
     onTool: next => { cancelGestures(); tool = next; placing = null; toolbar.setTool(tool); publish("tool"); },
     onUndo: () => undo(), onRedo: () => redo(),
+    ...(options.onPlayStart ? { onPlayStart: options.onPlayStart } : {}),
+    ...(options.onPlayCursor ? { onPlayCursor: options.onPlayCursor } : {}),
+    ...(options.onPlaySandbox ? { onPlaySandbox: options.onPlaySandbox } : {}),
+    ...(options.onExport ? { onExport: options.onExport } : {}),
+    ...(options.onImport ? { onImport: options.onImport } : {}),
+    ...(options.onOpenLibrary ? { onOpenLibrary: options.onOpenLibrary } : {}),
   });
   const workspace = document.createElement("div"); workspace.className = "editor-workspace";
   const palette = document.createElement("aside"); palette.className = "editor-palette"; palette.dataset["testid"] = "editor-palette"; palette.setAttribute("aria-label", "요소 팔레트");
@@ -543,6 +558,9 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   }
   window.addEventListener("pagehide", dispose, listener);
   return { element: panel, getState, getCourseSnapshot: () => structuredClone(history.document()),
+    history: () => history,
+    selection: () => selection,
+    setSelection(next) { selection = sanitizeSelection(next, course); render("select"); },
     setCourse(next) {
       clearInput(); history = createHistory(next); course = history.document();
       area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);

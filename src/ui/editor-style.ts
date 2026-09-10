@@ -33,7 +33,15 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-title-label span { font-weight:400; color:var(--ed-muted); margin-left:8px; font-size:11px; }
 .editor-title-label input { margin-top:2px; font-size:16px !important; }
 .editor-header-actions { display:flex; gap:8px; margin-left:auto; }
+.editor-view .editor-play { min-width:112px; font-weight:700; background:#dce7d3; border-color:#8fa18d; color:#2c4a28; }
 .editor-view .editor-play:disabled { border-color:#8fa18d; background:#dce7d3; color:#52684a; min-width:112px; font-weight:700; }
+.play-overlay { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; background:#111814; color:#f4fbff; }
+.play-overlay[hidden] { display:none !important; }
+.play-overlay .play-layout { display:grid; grid-template-columns:512px minmax(0,1fr); gap:24px; padding:20px; flex:1; min-height:0; }
+.play-overlay canvas { image-rendering:pixelated; display:block; outline-offset:4px; }
+.play-overlay button { min-height:44px; margin:0 8px 12px 0; padding:8px 16px; }
+.play-overlay [data-testid="clear-dialog"], .play-overlay [data-testid="game-over"], .play-overlay [data-testid="error-dialog"] { margin:12px 0; padding:12px; border:2px solid #8fa18d; }
+@media(max-width:900px) { .play-overlay .play-layout { grid-template-columns:1fr; } }
 .editor-tools { display:flex; justify-content:space-between; align-items:center; padding:8px 20px; gap:12px; background:#f8f5ed; border-bottom:1px solid #cecfc6; }
 .editor-tool-group, .editor-zooms { display:flex; align-items:center; gap:6px; }
 .editor-tools button { padding:8px 10px; }

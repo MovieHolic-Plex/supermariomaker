@@ -13,12 +13,26 @@ export interface ToolbarOptions {
   readonly onTool: (tool: EditorTool) => void;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
+  readonly onPlayStart?: () => void;
+  readonly onPlayCursor?: () => void;
+  readonly onPlaySandbox?: () => void;
+  readonly onExport?: () => void;
+  readonly onImport?: (file: File) => void;
+  readonly onOpenLibrary?: () => void;
+}
+function headerButton(label: string, id: string, extraClass?: string): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset["testid"] = id;
+  button.textContent = label;
+  if (extraClass) button.className = extraClass;
+  return button;
 }
 export function createToolbar(document: Document, options: ToolbarOptions) {
   const header = document.createElement("header"); header.className = "editor-header"; header.dataset["testid"] = "editor-toolbar";
   header.innerHTML = `<div class="editor-brand"><span class="editor-brand-mark" aria-hidden="true">M</span><div><strong>코스 메이커</strong><small>워크스페이스 · 미리보기</small></div></div>
     <label class="editor-title-label">코스 제목 <span>Enter로 적용 · 입력 중에는 초안</span><input data-testid="course-title" maxlength="80" autocomplete="off" spellcheck="false"></label>
-    <div class="editor-header-actions"><button type="button" data-testid="export-course" disabled>내보내기</button><button type="button" data-testid="play-start" class="editor-play" disabled>▶ 플레이</button></div>`;
+    <div class="editor-header-actions"></div>`;
   const title = header.querySelector("input");
   if (!title) throw new Error("Editor title input missing");
   title.value = options.title;
@@ -28,6 +42,47 @@ export function createToolbar(document: Document, options: ToolbarOptions) {
     event.preventDefault();
     options.onTitleCommit(title.value);
   }, { signal: options.signal });
+  const actions = header.querySelector(".editor-header-actions");
+  if (!actions) throw new Error("Editor header actions missing");
+  if (options.onOpenLibrary) {
+    const library = headerButton("보관함", "open-library");
+    library.addEventListener("click", options.onOpenLibrary, { signal: options.signal });
+    actions.append(library);
+  }
+  const exportButton = headerButton("내보내기", "export-course");
+  exportButton.disabled = options.onExport === undefined;
+  if (options.onExport) exportButton.addEventListener("click", options.onExport, { signal: options.signal });
+  actions.append(exportButton);
+  if (options.onImport) {
+    const importButton = headerButton("가져오기", "import-course-button");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json,.smb1.json";
+    input.dataset["testid"] = "import-course";
+    input.setAttribute("aria-label", "코스 파일 가져오기");
+    input.style.cssText = "position:absolute;width:44px;height:44px;opacity:0.01;overflow:hidden;";
+    importButton.addEventListener("click", () => input.click(), { signal: options.signal });
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      input.value = "";
+      if (file) options.onImport?.(file);
+    }, { signal: options.signal });
+    actions.append(importButton, input);
+  }
+  if (options.onPlayCursor) {
+    const cursor = headerButton("커서에서 테스트", "play-cursor");
+    cursor.addEventListener("click", options.onPlayCursor, { signal: options.signal });
+    actions.append(cursor);
+  }
+  if (options.onPlaySandbox) {
+    const sandbox = headerButton("목표 없이 테스트", "play-sandbox");
+    sandbox.addEventListener("click", options.onPlaySandbox, { signal: options.signal });
+    actions.append(sandbox);
+  }
+  const play = headerButton("▶ 플레이", "play-start", "editor-play");
+  play.disabled = options.onPlayStart === undefined;
+  if (options.onPlayStart) play.addEventListener("click", options.onPlayStart, { signal: options.signal });
+  actions.append(play);
   const tools = document.createElement("nav"); tools.className = "editor-tools"; tools.dataset["testid"] = "editor-tools"; tools.setAttribute("aria-label", "편집 도구와 보기 설정");
   const group = document.createElement("div"); group.className = "editor-tool-group";
   const buttons = new Map<string, HTMLButtonElement>();
