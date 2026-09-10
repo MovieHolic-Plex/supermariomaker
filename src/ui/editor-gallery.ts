@@ -1,3 +1,4 @@
+import { createAudioEngine } from "../audio/audio";
 import { createEditorSession, type EditorSession } from "../editor/session";
 import type { EditorSelection } from "../editor/selection";
 import type { Viewport } from "../editor/viewport";
@@ -11,9 +12,11 @@ import type { DatabaseHandle } from "../storage/db";
 import { exportCourseFile, importCourseFile } from "../storage/files";
 import { rememberOpen } from "../storage/host";
 import { openLibraryCourse, resolveLibraryConflict } from "../storage/library";
+import { koreanValidation } from "./copy";
 import { mountEditor, type EditorViewState } from "./editor";
 import { renderHud } from "./hud";
 import { renderPlay } from "./play-view";
+import { effectForEvent, musicForPlay } from "./settings";
 
 export type EditorPersistence = Readonly<{
   db: DatabaseHandle | null;
@@ -52,6 +55,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
   let autosave: AutosaveSession | null = null;
   let editorSession: EditorSession;
   const clock = new FixedClock();
+  const audio = createAudioEngine();
   let raf: number | null = null;
   let lastInput = EMPTY_INPUT;
   let playEvents: readonly GameEvent[] = [];
@@ -61,6 +65,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
   let input: ReturnType<typeof attachInput> | null = null;
   let playError: HTMLElement | null = null;
   let conflictBox: HTMLElement | null = null;
+  let muteButton: HTMLButtonElement | null = null;
 
   const view = mountEditor(root, {
     course,
@@ -115,7 +120,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     box.className = "editor-notice";
     box.style.cssText = "position:fixed;z-index:30;left:50%;top:24px;transform:translateX(-50%);max-width:520px;padding:16px;background:#fff6e8;color:#26323c;border:2px solid #c04426;";
     const text = document.createElement("p");
-    text.textContent = message;
+    text.textContent = koreanValidation(message);
     box.append(text);
     if (kind === "conflict") {
       const reload = document.createElement("button");
@@ -198,7 +203,8 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     const imported = await importCourseFile(persistence.db, bytes);
     if (imported.status !== "imported") {
       const message = imported.status === "invalid" ? imported.error.message : "가져오기에 실패했습니다.";
-      showHostDialog("error", message);
+      const box = showHostDialog("error", message);
+      if (imported.status === "invalid") box.dataset["errorKind"] = imported.error.code;
       return;
     }
     const opened = await openLibraryCourse(persistence.db, imported.record.id);
@@ -227,8 +233,19 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
         input: lastInput,
         events: playEvents,
         history: view.history().snapshot(),
+        audio: audio.snapshot(),
       },
     }));
+  }
+
+  function syncAudio(events: readonly GameEvent[]): void {
+    const run = editorSession.run();
+    if (!run) return;
+    for (const event of events) {
+      const effect = effectForEvent(event);
+      if (effect) audio.playEffect(effect);
+    }
+    audio.playMusic(musicForPlay(run.runtime, editorSession.mode()));
   }
 
   function cancelFrame(): void {
@@ -239,6 +256,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
   function destroyOverlay(): void {
     cancelFrame();
     clock.pause();
+    audio.stop();
     input?.dispose();
     input = null;
     overlay?.remove();
@@ -246,6 +264,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     gameCanvas = null;
     hud = null;
     playError = null;
+    muteButton = null;
     view.element.inert = false;
   }
 
@@ -256,7 +275,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     overlay.className = "play-overlay";
     overlay.dataset["testid"] = "play-overlay";
     overlay.innerHTML = `<div class="play-layout"><div></div><section>
-      <p>← → / A D 이동 · Space / Z 점프 · Shift / X 달리기 · Esc 일시정지</p>
+      <p>이동 ← → 또는 A D · 점프 Space 또는 Z · 달리기 Shift 또는 X · 일시정지 Esc</p>
     </section></div>`;
     const slot = overlay.querySelector(".play-layout > div");
     const controls = overlay.querySelector("section");
@@ -305,6 +324,10 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
       resumePlay();
     });
     add("return-editor", "편집으로 돌아가기", () => returnToEdit());
+    muteButton = add("audio-mute", "음소거", () => {
+      audio.setMuted(!audio.snapshot().muted);
+      renderOverlay();
+    });
     const syncButtons = () => {
       const mode = editorSession.mode();
       pauseButton.hidden = mode !== "PLAYING";
@@ -312,6 +335,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
       retryButton.hidden = mode !== "DEAD";
       clearDialog.hidden = mode !== "CLEARED";
       gameOver.hidden = mode !== "GAME_OVER";
+      if (muteButton) muteButton.textContent = audio.snapshot().muted ? "소리 켜기" : "음소거";
       if (mode === "CLEARED") {
         const ending = editorSession.run()?.runtime.ending.kind === "castle" ? "castle" : "flag";
         clearDialog.dataset["ending"] = ending;
@@ -330,6 +354,12 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     if (!run || !gameCanvas || !hud) return;
     renderPlay(gameCanvas, run.runtime);
     renderHud(hud, run.runtime, editorSession.mode());
+    const shot = audio.snapshot();
+    if (overlay) {
+      overlay.dataset["music"] = shot.music ?? "";
+      overlay.dataset["audioStatus"] = shot.status;
+      overlay.dataset["muted"] = String(shot.muted);
+    }
     const sync = Reflect.get(overlay ?? {}, "syncButtons");
     if (typeof sync === "function") sync();
   }
@@ -340,21 +370,25 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
       if (editorSession.mode() !== "PLAYING" || !input) return;
       lastInput = input.consume();
       playEvents = editorSession.step(lastInput);
+      syncAudio(playEvents);
       emitPlay();
       const mode = editorSession.mode();
       if (mode === "DEAD" || mode === "CLEARED" || mode === "GAME_OVER") {
         clock.pause();
         input.setActive(false);
+        syncAudio([]);
       }
     });
+    audio.tick();
     renderOverlay();
-    if (editorSession.mode() === "PLAYING") raf = requestAnimationFrame(loop);
+    if (overlay) raf = requestAnimationFrame(loop);
   }
 
   function pausePlay(reason: PauseReason): void {
     if (editorSession.mode() !== "PLAYING") return;
     editorSession.pause(reason);
     clock.pause();
+    audio.pause();
     input?.setActive(false);
     cancelFrame();
     renderOverlay();
@@ -368,9 +402,11 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     input?.setActive(true);
     clock.resume();
     playEvents = [];
+    void audio.activateFromGesture().then(ok => { if (ok) { syncAudio([]); renderOverlay(); emitPlay(); } });
     renderOverlay();
     emitPlay();
     gameCanvas?.focus();
+    cancelFrame();
     raf = requestAnimationFrame(loop);
   }
 
@@ -387,6 +423,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
       showPlayError(result.error);
       return;
     }
+    void audio.activateFromGesture();
     ensureOverlay();
     playError && (playError.hidden = true);
     resumePlay();
@@ -426,6 +463,7 @@ export function mountNormalEditor(root: HTMLElement, course: CourseV1, persisten
     for (const cancel of [...pending]) cancel();
     destroyOverlay();
     conflictBox?.remove();
+    void audio.dispose();
     if (qaEnabled) Reflect.deleteProperty(globalThis, "__qa");
     view.dispose();
   };

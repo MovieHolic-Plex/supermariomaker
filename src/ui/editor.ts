@@ -172,13 +172,13 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   const stageHeader = document.createElement("div"); stageHeader.className = "editor-stage-header";
   const areaLabel = document.createElement("label"); areaLabel.append("영역");
   const areas = document.createElement("select"); areas.dataset["testid"] = "area-select"; areaLabel.append(areas);
-  const tag = document.createElement("span"); tag.className = "editor-stage-tag"; tag.textContent = "16 PX GRID · PREVIEW";
+  const tag = document.createElement("span"); tag.className = "editor-stage-tag"; tag.textContent = "16픽셀 격자 · 미리보기";
   stageHeader.append(areaLabel, tag);
   const wrap = document.createElement("div"); wrap.className = "editor-canvas-wrap";
   const canvas = document.createElement("canvas"); canvas.className = "editor-canvas"; canvas.dataset["testid"] = "editor-canvas"; canvas.tabIndex = 0;
   canvas.setAttribute("aria-label", "코스 화면. 가운데 버튼 또는 스페이스와 드래그로 이동, 휠 또는 숫자 1, 2, 4, 8로 확대. 방향키로 이동, Home으로 시작 위치.");
   wrap.append(canvas);
-  const caption = document.createElement("p"); caption.className = "editor-stage-caption"; caption.textContent = "선택 · Ctrl+C/V/Z/Y · Delete · Esc · 그리기/지우기/채우기";
+  const caption = document.createElement("p"); caption.className = "editor-stage-caption"; caption.textContent = "선택 · 단축키 Ctrl+C/V/Z/Y · Delete · Esc · 그리기/지우기/채우기";
   stage.append(stageHeader, wrap, caption);
   const inspector = document.createElement("aside"); inspector.className = "editor-inspector"; inspector.dataset["testid"] = "properties"; inspector.setAttribute("aria-label", "요소 속성 미리보기");
   workspace.append(palette, stage, inspector);

@@ -52,7 +52,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
   hero.append(catalogIcon(document, kind, area.theme, 80), name);
   const properties = document.createElement("dl"); properties.className = "editor-facts";
   const row = (label: string, value: string) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label; dd.textContent = value; properties.append(dt, dd); };
-  row("기준 격자", "16 × 16 px");
+  row("기준 격자", "16×16픽셀");
   if ("defaults" in entry && typeof entry.defaults !== "function") {
     for (const [key, value] of Object.entries(entry.defaults)) {
       const field = Object.entries(entry.properties).find(([prop]) => prop === key)?.[1];

@@ -2,6 +2,7 @@ import { parseCourse } from "../level/serialize";
 import { COURSE_LIMITS } from "../level/types";
 import type { CourseV1, ValidationCode, ValidationIssue } from "../level/types";
 import { renderCoursePreview } from "./course-preview";
+import { EDITOR_THEMES } from "./inspector";
 
 const remedies: Readonly<Record<ValidationCode, string>> = {
   malformed_json: "JSON 문법을 확인한 뒤 파일을 다시 선택해 주세요.",
@@ -112,7 +113,7 @@ export function mountFixtureGallery(root: HTMLElement, options: FixtureGalleryOp
     const position = { x: x.valueAsNumber, y: y.valueAsNumber };
     renderCoursePreview(canvas, course, { area, camera: position }); canvas.hidden = false;
     canvas.dataset["areaId"] = area.id;
-    info.textContent = `${course.areas.length}개 영역 · ${area.name} (${area.theme}) · ${area.width} × ${area.height}칸 · 타일 ${area.tiles.length}개 · 오브젝트 ${area.objects.length}개`;
+    info.textContent = `${course.areas.length}개 영역 · ${area.name} (${EDITOR_THEMES[area.theme]}) · ${area.width} × ${area.height}칸 · 타일 ${area.tiles.length}개 · 오브젝트 ${area.objects.length}개`;
     info.dataset["tiles"] = String(area.tiles.length); info.dataset["objects"] = String(area.objects.length); info.dataset["areas"] = String(course.areas.length);
     camera.textContent = `X ${position.x} / ${x.max} · Y ${position.y} / ${y.max}`;
     root.dispatchEvent(new CustomEvent("fixture-preview", { bubbles: true, detail: { areaId: area.id, camera: position } }));
@@ -126,7 +127,7 @@ export function mountFixtureGallery(root: HTMLElement, options: FixtureGalleryOp
     y.value = String(Math.min(Number(y.max), Math.max(0, (start?.y ?? 240) - 208)));
     x.disabled = x.max === "0"; y.disabled = y.max === "0"; render();
   };
-  const reject = (issue: ValidationIssue) => show("rejected", `불러오기 실패 · ${remedies[issue.code]} 위치: ${issue.path} (${issue.code}). 기존 미리보기는 유지됩니다.`, issue.code, issue.path);
+  const reject = (issue: ValidationIssue) => show("rejected", `불러오기 실패 · ${remedies[issue.code]} 기존 미리보기는 유지됩니다.`, issue.code, issue.path);
   const load = async () => {
     const token = ++selection;
     const file = input.files?.[0];
@@ -152,7 +153,7 @@ export function mountFixtureGallery(root: HTMLElement, options: FixtureGalleryOp
       snapshot.textContent = JSON.stringify(course);
       title.textContent = course.title;
       areas.replaceChildren(...course.areas.map(area => {
-        const option = document.createElement("option"); option.value = area.id; option.textContent = `${area.name} · ${area.theme}`; return option;
+        const option = document.createElement("option"); option.value = area.id; option.textContent = `${area.name} · ${EDITOR_THEMES[area.theme]}`; return option;
       }));
       areas.disabled = false; areas.value = course.mainAreaId; selectArea();
       options.onCourseLoaded?.(course);

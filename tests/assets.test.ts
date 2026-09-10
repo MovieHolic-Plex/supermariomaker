@@ -96,3 +96,9 @@ test("keeps Bullet's nonempty raster perimeter at least 3:1 against castle", () 
   expect(contrasts.length).toBeGreaterThan(0);
   expect(Math.min(...contrasts)).toBeGreaterThanOrEqual(3);
 });
+
+test("small swim pose is not a standing idle", () => {
+  expect(PIXELS["mario.small.swim1"].rows).not.toEqual(PIXELS["mario.small.idle"].rows);
+  expect(PIXELS["mario.small.swim2"].rows).not.toEqual(PIXELS["mario.small.swim1"].rows);
+  expect(PIXELS["mario.super.swim1"].rows).not.toEqual(PIXELS["mario.super.idle"].rows);
+});

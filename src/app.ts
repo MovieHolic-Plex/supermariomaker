@@ -19,7 +19,7 @@ export async function bootApp(app: HTMLElement): Promise<void> {
   const audioAvailable = typeof globalThis.AudioContext !== "undefined";
 
   const header = document.createElement("header");
-  header.innerHTML = '<span class="brand">SUPER MARIO / COURSE MAKER</span><span class="stage">작업실 기초 버전</span>';
+  header.innerHTML = '<span class="brand">슈퍼 마리오 / 코스 메이커</span><span class="stage">작업실 기초 버전</span>';
   const main = document.createElement("main");
   app.replaceChildren(header, main);
 

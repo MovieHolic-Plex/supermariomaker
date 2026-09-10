@@ -12,8 +12,47 @@ const VALIDATION_KO: Readonly<Record<string, string>> = {
   "Spawn area does not exist": "시작 영역이 없습니다.",
   "Entire player collider must fit the spawn area": "플레이어 전체가 시작 영역 안에 있어야 합니다.",
   "Preview requires a goal or explicit goal-free testing": "목표가 필요하거나 '목표 없이 테스트'를 선택하세요.",
+  "Integer outside allowed range": "허용 범위 밖의 정수입니다.",
+  "Expected plain JSON data": "일반 JSON 데이터여야 합니다.",
+  "Expected a data property": "데이터 속성이어야 합니다.",
+  "Expected an array": "배열이어야 합니다.",
+  "Expected text": "텍스트여야 합니다.",
+  "Expected a UUID": "UUID여야 합니다.",
+  "Expected a number": "숫자여야 합니다.",
+  "Objects must use the 16-pixel grid": "오브젝트는 16픽셀 격자에 맞춰야 합니다.",
+  "Warp zones require exactly three slots": "워프 존은 슬롯이 정확히 세 개여야 합니다.",
+  "Missing warp slot": "워프 슬롯이 없습니다.",
+  "Title must be trimmed and 1-80 characters": "제목은 앞뒤 공백 없이 1–80자여야 합니다.",
+  "Timer must be zero or 30-999": "제한 시간은 0(무제한) 또는 30–999초여야 합니다.",
+  "Course needs 1-16 areas": "코스에는 영역이 1–16개 있어야 합니다.",
+  "Too many populated cells": "채워진 칸이 너무 많습니다.",
+  "Too many placed objects": "배치된 오브젝트가 너무 많습니다.",
+  "Cell outside area": "칸이 영역 밖입니다.",
+  "Only one cell may occupy each coordinate": "같은 좌표에는 칸이 하나만 있을 수 있습니다.",
+  "Entire object collider must fit the area": "오브젝트 전체가 영역 안에 있어야 합니다.",
+  "Entire bridge must fit the area": "다리 전체가 영역 안에 있어야 합니다.",
+  "Bridge must overlay empty cells": "다리는 빈 칸 위에만 놓을 수 있습니다.",
+  "Main area does not exist": "메인 영역이 없습니다.",
+  "Start area does not exist": "시작 영역이 없습니다.",
+  "Entire player collider must fit the start area": "플레이어 전체가 시작 영역 안에 있어야 합니다.",
+  "Pipe links must name distinct reciprocal pipes": "토관 연결은 서로 다른 토관을 양방향으로 가리켜야 합니다.",
+  "Balance pairs must be distinct, reciprocal and in the same area": "균형 발판은 같은 영역의 서로 다른 짝이어야 합니다.",
+  "Piranha must be attached at its same-area pipe mouth": "뻐금은 같은 영역 토관 입구에 연결해야 합니다.",
+  "Bowser must exist in the same area": "쿠파는 같은 영역에 있어야 합니다.",
+  "Warp slots must name distinct same-area pipes": "워프 슬롯은 같은 영역의 서로 다른 토관이어야 합니다.",
+  "Already playing": "이미 플레이 중입니다.",
+  "Placement area does not exist": "배치할 영역이 없습니다.",
+  "Edit must fit the area": "편집 내용이 영역에 맞아야 합니다.",
+  "Cells must use integer coordinates": "칸 좌표는 정수여야 합니다.",
+  "Area name must be trimmed and 1-80 characters": "영역 이름은 앞뒤 공백 없이 1–80자여야 합니다.",
+  "Area size must be 32-4096 by 15-128": "영역 크기는 32–4096 × 15–128칸이어야 합니다.",
+  "Move the start before shrinking this area": "시작 위치를 옮긴 뒤에 축소할 수 있습니다.",
 };
 
+/** Human-facing Korean for editor dialogs. Machine codes/paths stay on dataset and inspector fields. */
 export function koreanValidation(message: string): string {
-  return VALIDATION_KO[message] ?? message;
+  if (VALIDATION_KO[message]) return VALIDATION_KO[message];
+  const variant = /^Unsupported variant: /.exec(message);
+  if (variant) return `지원하지 않는 종류입니다: ${message.slice(variant[0].length)}`;
+  return message;
 }

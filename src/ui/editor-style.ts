@@ -23,7 +23,7 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-view button:disabled { cursor:not-allowed; color:#777b7c; background:#f0f0ea; border-color:#deded5; }
 .editor-view :focus-visible { outline:3px solid #12688e; outline-offset:3px; }
 .editor-view input:not([type=checkbox]):not([type=file]) { display:block; width:100%; min-width:0; min-height:44px; border:1px solid #bdc4c1; border-radius:6px; padding:8px 12px; background:#fffefa; }
-.editor-view input.editor-file-input { position:absolute; width:44px; height:44px; opacity:0.01; overflow:hidden; pointer-events:none; }
+.editor-view input.editor-file-input { position:absolute; width:0; height:0; opacity:0; overflow:hidden; pointer-events:none; border:0; padding:0; margin:0; }
 .editor-header { display:flex; align-items:center; gap:28px; padding:12px 20px; background:var(--ed-paper); border-top:4px solid var(--ed-accent); border-bottom:1px solid var(--ed-line); }
 .editor-brand { display:flex; flex-shrink:0; align-items:center; gap:12px; }
 .editor-brand-mark { display:grid; place-items:center; width:44px; height:44px; color:#fff6d6; font:bold 28px/1 monospace; background:#bd442a; border:3px solid #80341f; box-shadow:inset 3px 3px 0 #ed9364; }
