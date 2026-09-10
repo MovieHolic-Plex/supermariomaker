@@ -20,7 +20,7 @@ export type StorageErrorKind = "abort" | "quota" | "conflict" | "deleted" | "una
 export type StorageError = Readonly<{ kind: StorageErrorKind; name: string }>;
 
 export type DbEvent =
-  | Readonly<{ kind: "request"; op: "get" | "put" | "delete"; status: "success" | "error" }>
+  | Readonly<{ kind: "request"; op: "get" | "put" | "delete" | "getAll"; status: "success" | "error" }>
   | Readonly<{ kind: "complete" }>
   | Readonly<{ kind: "abort" }>;
 
@@ -35,6 +35,8 @@ export type ObjectStoreLike = {
   get(key: IDBValidKey): RequestLike;
   put(value: unknown): RequestLike;
   delete(key: IDBValidKey): RequestLike;
+  /** ADDITIVE for task 19 library listing: enumerate through the transactional path. Not a second index. */
+  getAll(): RequestLike;
 };
 
 export type TransactionLike = {
@@ -74,6 +76,7 @@ export type MemoryDatabase = DatabaseHandle & {
 
 type FailKind = "quota" | "abort";
 type StoreName = typeof COURSES_STORE | typeof SETTINGS_STORE;
+type StoreOp = "get" | "put" | "delete" | "getAll";
 type Waiter = Readonly<{ op: "get" | "put" | "delete"; resolve: (event: DbEvent) => void }>;
 
 function namedError(name: string, message: string): DOMException | Error {
@@ -151,6 +154,7 @@ class MemoryTransaction implements TransactionLike {
       get: (key) => this.enqueue("get", store, key),
       put: (value) => this.enqueue("put", store, value),
       delete: (key) => this.enqueue("delete", store, key),
+      getAll: () => this.enqueue("getAll", store, undefined),
     };
   }
 
@@ -163,7 +167,7 @@ class MemoryTransaction implements TransactionLike {
   }
 
   private enqueue(
-    op: "get" | "put" | "delete",
+    op: StoreOp,
     store: StoreName,
     arg: unknown,
   ): RequestLike {
@@ -174,7 +178,7 @@ class MemoryTransaction implements TransactionLike {
   }
 
   private execute(
-    op: "get" | "put" | "delete",
+    op: StoreOp,
     store: StoreName,
     arg: unknown,
     request: MemoryRequest,
@@ -182,6 +186,20 @@ class MemoryTransaction implements TransactionLike {
     if (this.finished) return;
     if (this.aborted) {
       this.failRequest(request, op, this.error ?? abortError());
+      return;
+    }
+    if (op === "getAll") {
+      const values: unknown[] = [];
+      const overlayKeys = new Set(this.overlay[store].keys());
+      for (const key of this.db.committedKeys(store)) {
+        if (this.overlay.deleted[store].has(key) || overlayKeys.has(key)) continue;
+        const value = this.db.readCommitted(store, key);
+        if (value !== undefined) values.push(value);
+      }
+      for (const value of this.overlay[store].values()) values.push(value);
+      request.result = values;
+      request.error = null;
+      this.succeedRequest(request, "getAll");
       return;
     }
     if (op === "get") {
@@ -222,14 +240,14 @@ class MemoryTransaction implements TransactionLike {
     this.succeedRequest(request, "put");
   }
 
-  private succeedRequest(request: MemoryRequest, op: "get" | "put" | "delete"): void {
+  private succeedRequest(request: MemoryRequest, op: StoreOp): void {
     this.db.emit({ kind: "request", op, status: "success" });
     request.onsuccess?.(asEvent("success"));
     this.pending -= 1;
     void this.maybeFinish();
   }
 
-  private failRequest(request: MemoryRequest, op: "get" | "put" | "delete", error: DOMException | Error): void {
+  private failRequest(request: MemoryRequest, op: StoreOp, error: DOMException | Error): void {
     request.result = undefined;
     request.error = error;
     this.db.emit({ kind: "request", op, status: "error" });
@@ -337,6 +355,10 @@ class MemoryDatabaseState {
     return new Promise((resolve) => { this.waiters.push({ op, resolve }); });
   }
 
+  committedKeys(store: StoreName): Iterable<string> {
+    return store === COURSES_STORE ? this.courses.keys() : this.settings.keys();
+  }
+
   readCommitted(store: StoreName, key: string): unknown {
     if (store === COURSES_STORE) return this.courses.get(key);
     return this.settings.get(key);
@@ -436,6 +458,7 @@ function wrapIdbTransaction(tx: IDBTransaction): TransactionLike {
         get: (key) => wrapIdbRequest(store.get(key)),
         put: (value) => wrapIdbRequest(store.put(value)),
         delete: (key) => wrapIdbRequest(store.delete(key)),
+        getAll: () => wrapIdbRequest(store.getAll()),
       };
     },
     abort() { tx.abort(); },
