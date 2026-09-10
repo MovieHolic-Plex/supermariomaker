@@ -3,7 +3,7 @@ import { createClipboard } from "../src/editor/clipboard";
 import { deleteObjects, placeObject, setCourseFields } from "../src/editor/commands";
 import { createHistory } from "../src/editor/history";
 import {
-  beginMarqueeGesture, beginMoveGesture, commitCourseProperties, deleteSelection,
+  beginMarqueeGesture, beginMoveGesture, commitCourseProperties, commitObjectProperties, deleteSelection,
   sanitizeSelection, selectRect, type EditorSelection,
 } from "../src/editor/selection";
 import { authoredContentEqual, serializeCourse } from "../src/level/serialize";
@@ -306,5 +306,25 @@ describe("property atomicity", () => {
     expect(history.snapshot().undoCount).toBe(1);
     expect(objectById(history.document(), goombaId)).toMatchObject({ x: 64, y: 208 });
     expect(objectById(history.document(), fixtureId(86))).toMatchObject({ kind: "goomba", x: 80, y: 208 });
+  });
+
+  test("object property edit is one undoable command and rejected input writes nothing", () => {
+    const origin = createNewCourseFixture();
+    const id = origin.mainAreaId;
+    const koopaId = fixtureId(77);
+    const course = ok(placeObject(origin, id, { id: koopaId, kind: "koopa", x: 64, y: 208 }));
+    const history = createHistory(course);
+    expect(commitObjectProperties(history, id, koopaId, { color: "red" }).status).toBe("committed");
+    expect(objectById(history.document(), koopaId)).toMatchObject({ props: { color: "red" } });
+    expect(history.snapshot().undoCount).toBe(1);
+    const generation = history.snapshot().generation;
+    expect(commitObjectProperties(history, id, koopaId, { color: "blue" }).status).toBe("rejected");
+    expect(objectById(history.document(), koopaId)).toMatchObject({ props: { color: "red" } });
+    expect(history.snapshot().undoCount).toBe(1);
+    expect(history.snapshot().generation).toBe(generation);
+    expect(commitObjectProperties(history, id, koopaId, { color: "red" }).status).toBe("noop");
+    expect(history.snapshot().undoCount).toBe(1);
+    expect(history.undo()).toBe(true);
+    expect(objectById(history.document(), koopaId)).toMatchObject({ props: { color: "green" } });
   });
 });

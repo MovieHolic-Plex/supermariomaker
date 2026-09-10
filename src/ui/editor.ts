@@ -231,12 +231,17 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     toolbar.setHistory({ undo: snap.undoCount, redo: snap.redoCount });
     if (saveStatus === "unsupported") renderSave();
   }
+  function paintInspector(): void {
+    const id = selection.objectIds.length === 1 ? selection.objectIds[0] : undefined;
+    const selected = id ? area.objects.find(item => item.id === id) : undefined;
+    renderInspector(inspector, course, area, kind, inspectorHost, selected);
+  }
   function applyDocument(): void {
     course = history.document();
     const keep = course.areas.some(item => item.id === area.id);
     area = selectedArea(keep ? area.id : course.mainAreaId);
     selection = keep ? sanitizeSelection(selection, course) : emptySelection(area.id);
-    chunks.clear(); updateAreas(); updatePalette(); syncHistory(); renderInspector(inspector, course, area, kind, inspectorHost);
+    chunks.clear(); updateAreas(); updatePalette(); syncHistory(); paintInspector();
   }
   function undo(): void {
     cancelGestures(); if (!history.undo()) return; lastOutcome = null; applyDocument(); render("undo");
@@ -272,6 +277,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     selection = marquee.gesture.commit(course);
     const id = marquee.id; marquee = null;
     if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    paintInspector();
     render("marquee-commit");
   }
   function finishMove(): void {
@@ -357,7 +363,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       button.addEventListener("click", () => {
         kind = id;
         for (const item of list.querySelectorAll("button")) item.setAttribute("aria-pressed", String(item === button));
-        renderInspector(inspector, course, area, kind, inspectorHost); options.onPalettePreview?.(kind); publish("palette");
+        paintInspector(); options.onPalettePreview?.(kind); publish("palette");
       }, listener);
       return button;
     }));
@@ -529,11 +535,11 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     if (document.activeElement !== canvas || event.ctrlKey || event.altKey || event.metaKey) return;
     if (event.code === "Escape" && (paint || marquee || moving)) {
       event.preventDefault();
-      if (marquee) { marquee.gesture.cancel(); marquee = null; selection = emptySelection(area.id); render("select"); return; }
+      if (marquee) { marquee.gesture.cancel(); marquee = null; selection = emptySelection(area.id); paintInspector(); render("select"); return; }
       if (moving) { moving.gesture.cancel(); moving = null; lastOutcome = "cancelled"; render("move-commit"); return; }
       cancelPaint(); return;
     }
-    if (event.code === "Escape") { event.preventDefault(); selection = emptySelection(area.id); placing = null; render("select"); return; }
+    if (event.code === "Escape") { event.preventDefault(); selection = emptySelection(area.id); placing = null; paintInspector(); render("select"); return; }
     if (event.code === "Space") { event.preventDefault(); space = true; render("space"); return; }
     if (event.repeat) return;
     const zoom = EDITOR_ZOOMS.find(value => event.key === String(value));
@@ -548,9 +554,9 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   canvas.addEventListener("blur", clearInput, listener); window.addEventListener("blur", clearInput, listener);
   document.addEventListener("visibilitychange", () => { if (document.hidden) clearInput(); }, listener);
   window.addEventListener("resize", resize, listener);
-  areas.addEventListener("change", () => { clearInput(); area = selectedArea(areas.value); selection = emptySelection(area.id); chunks.clear(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); home(); }, listener);
+  areas.addEventListener("change", () => { clearInput(); area = selectedArea(areas.value); selection = emptySelection(area.id); chunks.clear(); updatePalette(); paintInspector(); home(); }, listener);
   const observer = new ResizeObserver(resize); observer.observe(wrap);
-  updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); syncHistory(); toolbar.setTool(tool); resize();
+  updateAreas(); updatePalette(); paintInspector(); syncHistory(); toolbar.setTool(tool); resize();
   if (!options.viewport) home();
   function dispose(): void {
     if (disposed) return;
@@ -560,13 +566,13 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   return { element: panel, getState, getCourseSnapshot: () => structuredClone(history.document()),
     history: () => history,
     selection: () => selection,
-    setSelection(next) { selection = sanitizeSelection(next, course); render("select"); },
+    setSelection(next) { selection = sanitizeSelection(next, course); paintInspector(); render("select"); },
     setCourse(next) {
       clearInput(); history = createHistory(next); course = history.document();
       area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
       selection = emptySelection(area.id); placing = null;
       titleDraft = course.title; toolbar.setTitle(course.title); lastOutcome = null; chunks.clear();
-      updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); syncHistory(); render("course");
+      updateAreas(); updatePalette(); paintInspector(); syncHistory(); render("course");
     },
     setViewport(next) { clearInput(); view = { ...next }; render("viewport"); },
     setSaveStatus(status, detail) {

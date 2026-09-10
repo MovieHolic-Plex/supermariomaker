@@ -1,4 +1,4 @@
-import { deleteObjects, moveObjects, setCourseFields, type PixelDelta } from "./commands";
+import { deleteObjects, moveObjects, setCourseFields, setObjectProperties, type PixelDelta } from "./commands";
 import { type CommitOutcome, type EditorHistory } from "./history";
 import type { CourseV1, PlacedObject } from "../level/types";
 import { objectBounds } from "../level/validate";
@@ -124,4 +124,14 @@ export function commitCourseProperties(
   patch: Readonly<{ title?: string; timerSeconds?: number }>,
 ): CommitOutcome {
   return history.commit(setCourseFields(history.document(), patch));
+}
+
+/** Inspector wiring: one property payload is one history command; noop/reject write nothing. */
+export function commitObjectProperties(
+  history: EditorHistory,
+  areaId: string,
+  objectId: string,
+  props: unknown,
+): CommitOutcome {
+  return history.commit(setObjectProperties(history.document(), areaId, objectId, props));
 }

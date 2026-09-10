@@ -1,10 +1,10 @@
 import { createArea, deleteArea, linkPipes, placePipe, previewResize, renameArea, resizeArea, setAreaTheme, warpLabels } from "../editor/areas";
 import { deleteObjects, placeObject, setCourseFields, setObjectProperties } from "../editor/commands";
 import type { EditorHistory } from "../editor/history";
-import { commitCourseProperties } from "../editor/selection";
+import { commitCourseProperties, commitObjectProperties } from "../editor/selection";
 import { getFrame } from "../assets/manifest";
 import { CATALOG_CATEGORIES, createObject, OBJECT_CATALOG, SPAWNED_CATALOG, TILE_CATALOG, type SpawnedKind } from "../level/catalog";
-import type { AreaV1, CourseV1, ObjectKind, Theme, TileKind, ValidationResult } from "../level/types";
+import type { AreaV1, CourseV1, ObjectKind, PlacedObject, Theme, TileKind, ValidationResult } from "../level/types";
 import { canvasContext, drawSprite } from "../render/assets";
 
 export type PaletteKind = TileKind | ObjectKind | SpawnedKind;
@@ -42,27 +42,277 @@ function nextPipeX(area: AreaV1): number {
   return 80;
 }
 
-export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV1, kind: PaletteKind, host: InspectorHost): void {
-  const document = root.ownerDocument, entry = EDITOR_CATALOG[kind];
+function pipesIn(area: AreaV1): Extract<PlacedObject, { kind: "pipe" }>[] {
+  return area.objects.filter((object): object is Extract<PlacedObject, { kind: "pipe" }> => object.kind === "pipe");
+}
+
+function liveObject(host: InspectorHost, areaId: string, objectId: string): PlacedObject | undefined {
+  return host.history.document().areas.find(item => item.id === areaId)?.objects.find(item => item.id === objectId);
+}
+
+function mergeObjectProps(object: PlacedObject, patch: Record<string, unknown>): unknown {
+  if (object.kind === "castleGoal") {
+    const bridgePatch = patch["bridge"];
+    const bridge = { ...object.props.bridge, ...(typeof bridgePatch === "object" && bridgePatch !== null ? bridgePatch : {}) };
+    const next: Record<string, unknown> = { bridge };
+    if (object.props.bowserId !== undefined) next["bowserId"] = object.props.bowserId;
+    if (Object.hasOwn(patch, "bowserId")) {
+      if (patch["bowserId"]) next["bowserId"] = patch["bowserId"];
+      else delete next["bowserId"];
+    }
+    return next;
+  }
+  if (object.kind === "pipe") {
+    const next: Record<string, unknown> = { height: object.props.height, entrance: object.props.entrance };
+    if (object.props.destination) next["destination"] = object.props.destination;
+    Object.assign(next, patch);
+    if (Object.hasOwn(patch, "destination") && !patch["destination"]) delete next["destination"];
+    return next;
+  }
+  if (object.kind === "platform") {
+    const next: Record<string, unknown> = {
+      motion: object.props.motion, length: object.props.length, travel: object.props.travel, speed: object.props.speed,
+    };
+    if (object.props.motion === "balance" && object.props.pairId) next["pairId"] = object.props.pairId;
+    Object.assign(next, patch);
+    if (next["motion"] !== "balance") delete next["pairId"];
+    if (Object.hasOwn(patch, "pairId") && !patch["pairId"]) delete next["pairId"];
+    return next;
+  }
+  if (object.kind === "warpZone" && Object.hasOwn(patch, "pipeIds")) return { pipeIds: patch["pipeIds"] };
+  return { ...object.props, ...patch };
+}
+
+function showFieldError(control: HTMLElement, error: HTMLParagraphElement, message: string, label: HTMLElement): void {
+  error.hidden = false; error.textContent = message;
+  if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.setCustomValidity(message);
+  control.classList.add("editor-field-invalid"); control.setAttribute("aria-invalid", "true");
+  label.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function hideFieldError(control: HTMLElement, error: HTMLParagraphElement): void {
+  error.hidden = true; error.textContent = "";
+  if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.setCustomValidity("");
+  control.classList.remove("editor-field-invalid"); control.setAttribute("aria-invalid", "false");
+}
+
+function bindObjectField(
+  host: InspectorHost, areaId: string, objectId: string, control: HTMLElement, error: HTMLParagraphElement, label: HTMLElement,
+  readProps: () => unknown,
+): void {
+  const preview = () => {
+    const result = setObjectProperties(host.history.document(), areaId, objectId, readProps());
+    if (result.ok) hideFieldError(control, error);
+    else showFieldError(control, error, `${result.error.code}:${result.error.path}`, label);
+  };
+  const commitField = () => {
+    const props = readProps();
+    const outcome = commitObjectProperties(host.history, areaId, objectId, props);
+    if (outcome.status === "committed") host.onCommitted();
+    else if (outcome.status === "rejected") {
+      const result = setObjectProperties(host.history.document(), areaId, objectId, props);
+      showFieldError(control, error, result.ok ? "rejected" : `${result.error.code}:${result.error.path}`, label);
+      host.onRejected();
+    }
+  };
+  control.addEventListener("input", preview);
+  control.addEventListener("change", commitField);
+}
+
+function integerControl(document: Document, testid: string, value: number, min: number, max: number): HTMLInputElement {
+  const input = document.createElement("input");
+  input.type = "number"; input.dataset["testid"] = testid; input.value = String(value);
+  input.min = String(min); input.max = String(max); input.step = "1"; input.autocomplete = "off";
+  return input;
+}
+
+function choiceControl(document: Document, testid: string, value: string, options: readonly { value: string; label: string }[]): HTMLSelectElement {
+  const select = document.createElement("select"); select.dataset["testid"] = testid;
+  for (const item of options) {
+    const option = document.createElement("option"); option.value = item.value; option.textContent = item.label; select.append(option);
+  }
+  select.value = value;
+  return select;
+}
+
+function fieldShell(document: Document, caption: string, testid: string): {
+  label: HTMLLabelElement; error: HTMLParagraphElement;
+} {
+  const label = document.createElement("label"); label.className = "editor-field";
+  const title = document.createElement("span"); title.className = "editor-field-caption"; title.textContent = caption;
+  const error = document.createElement("p"); error.className = "editor-notice editor-field-error";
+  error.dataset["testid"] = `${testid}-error`; error.hidden = true;
+  label.append(title);
+  return { label, error };
+}
+
+function appendObjectProperties(
+  root: HTMLElement, document: Document, course: CourseV1, area: AreaV1, selected: PlacedObject, host: InspectorHost,
+): void {
+  const panel = document.createElement("section");
+  panel.className = "editor-area-panel";
+  panel.dataset["testid"] = "object-properties";
+  panel.dataset["objectId"] = selected.id;
+  panel.dataset["kind"] = selected.kind;
+  const heading = document.createElement("h3"); heading.className = "editor-section-heading"; heading.textContent = "배치된 오브젝트";
+  panel.append(heading);
+  const patch = (next: Record<string, unknown>) => {
+    const object = liveObject(host, area.id, selected.id);
+    return object ? mergeObjectProps(object, next) : next;
+  };
+  const addInteger = (testid: string, caption: string, value: number, min: number, max: number, read: (n: number) => Record<string, unknown>) => {
+    const { label, error } = fieldShell(document, caption, testid);
+    const input = integerControl(document, testid, value, min, max);
+    bindObjectField(host, area.id, selected.id, input, error, label, () => patch(read(Number(input.value))));
+    label.append(input, error); panel.append(label);
+  };
+  const addChoice = (testid: string, caption: string, value: string, options: readonly { value: string; label: string }[], read: (value: string) => Record<string, unknown>) => {
+    const { label, error } = fieldShell(document, caption, testid);
+    const select = choiceControl(document, testid, value, options);
+    bindObjectField(host, area.id, selected.id, select, error, label, () => patch(read(select.value)));
+    label.append(select, error); panel.append(label);
+  };
+  switch (selected.kind) {
+    case "pipe": {
+      addInteger("object-prop-height", "높이", selected.props.height, 2, 16, height => ({ height }));
+      addChoice("object-prop-entrance", "입구", selected.props.entrance, [
+        { value: "none", label: "none" }, { value: "down", label: "down" }, { value: "up", label: "up" },
+      ], entrance => ({ entrance }));
+      const destValue = selected.props.destination ? `${selected.props.destination.areaId}:${selected.props.destination.pipeId}` : "";
+      const destOptions = [{ value: "", label: "-" }, ...course.areas.flatMap(item => pipesIn(item).filter(pipe => pipe.id !== selected.id).map(pipe => ({
+        value: `${item.id}:${pipe.id}`, label: `${item.name} · ${pipe.props.entrance}`,
+      })))];
+      addChoice("object-prop-destination", "연결 토관", destValue, destOptions, value => {
+        const sep = value.indexOf(":");
+        if (sep === -1) return { destination: undefined };
+        return { destination: { areaId: value.slice(0, sep), pipeId: value.slice(sep + 1) } };
+      });
+      break;
+    }
+    case "platform": {
+      addChoice("object-prop-motion", "이동", selected.props.motion, [
+        { value: "horizontal", label: "horizontal" }, { value: "vertical", label: "vertical" },
+        { value: "falling", label: "falling" }, { value: "balance", label: "balance" },
+      ], motion => ({ motion }));
+      addInteger("object-prop-length", "길이", selected.props.length, 2, 8, length => ({ length }));
+      addInteger("object-prop-travel", "이동 거리", selected.props.travel, 1, 32, travel => ({ travel }));
+      addChoice("object-prop-speed", "속도", String(selected.props.speed), [
+        { value: "0.5", label: "0.5" }, { value: "1", label: "1" }, { value: "2", label: "2" },
+      ], value => ({ speed: Number(value) }));
+      if (selected.props.motion === "balance") {
+        const pairValue = selected.props.pairId ?? "";
+        const pairOptions = [{ value: "", label: "-" }, ...area.objects.filter(object => object.kind === "platform" && object.id !== selected.id).map(object => ({
+          value: object.id, label: object.id.slice(0, 8),
+        }))];
+        addChoice("object-prop-pairId", "균형 짝", pairValue, pairOptions, pairId => ({ pairId: pairId === "" ? undefined : pairId }));
+      }
+      break;
+    }
+    case "flagGoal":
+      addInteger("object-prop-height", "깃대 높이", selected.props.height, 4, 12, height => ({ height }));
+      break;
+    case "castleGoal": {
+      addInteger("object-prop-bridge-x", "가로 위치", selected.props.bridge.x, 0, area.width - 1, x => ({ bridge: { x } }));
+      addInteger("object-prop-bridge-y", "세로 위치", selected.props.bridge.y, 0, area.height - 1, y => ({ bridge: { y } }));
+      addInteger("object-prop-bridge-width", "너비", selected.props.bridge.width, 1, 64, width => ({ bridge: { width } }));
+      addChoice("object-prop-bridge-height", "높이", "1", [{ value: "1", label: "1" }], () => ({ bridge: { height: 1 } }));
+      const bowserValue = selected.props.bowserId ?? "";
+      const bowserOptions = [{ value: "", label: "-" }, ...area.objects.filter(object => object.kind === "bowser").map(object => ({
+        value: object.id, label: object.id.slice(0, 8),
+      }))];
+      addChoice("object-prop-bowserId", "쿠파", bowserValue, bowserOptions, bowserId => ({ bowserId: bowserId === "" ? undefined : bowserId }));
+      break;
+    }
+    case "koopa":
+      addChoice("object-prop-color", "색상", selected.props.color, [
+        { value: "green", label: "green" }, { value: "red", label: "red" },
+      ], color => ({ color }));
+      break;
+    case "paratroopa":
+      addChoice("object-prop-color", "색상", selected.props.color, [
+        { value: "green", label: "green" }, { value: "red", label: "red" },
+      ], color => ({ color }));
+      addChoice("object-prop-motion", "이동", selected.props.motion, [
+        { value: "hop", label: "hop" }, { value: "vertical", label: "vertical" },
+      ], motion => ({ motion }));
+      break;
+    case "piranha": {
+      const pipeOptions = pipesIn(area).map(pipe => ({
+        value: pipe.id, label: `${pipe.props.entrance} · ${pipe.id.slice(0, 8)}`,
+      }));
+      addChoice("object-prop-pipeId", "붙일 토관", selected.props.pipeId, pipeOptions, pipeId => ({ pipeId }));
+      break;
+    }
+    case "cheep":
+      addChoice("object-prop-color", "색상", selected.props.color, [
+        { value: "green", label: "green" }, { value: "red", label: "red" },
+      ], color => ({ color }));
+      addChoice("object-prop-mode", "이동", selected.props.mode, [
+        { value: "swim", label: "swim" }, { value: "leap", label: "leap" },
+      ], mode => ({ mode }));
+      break;
+    case "firebar":
+      addInteger("object-prop-length", "길이", selected.props.length, 3, 12, length => ({ length }));
+      addChoice("object-prop-direction", "회전 방향", selected.props.direction, [
+        { value: "cw", label: "cw" }, { value: "ccw", label: "ccw" },
+      ], direction => ({ direction }));
+      addChoice("object-prop-speed", "회전 속도", selected.props.speed, [
+        { value: "slow", label: "slow" }, { value: "normal", label: "normal" }, { value: "fast", label: "fast" },
+      ], speed => ({ speed }));
+      break;
+    case "warpZone":
+      for (const index of [0, 1, 2] as const) {
+        const testid = `object-prop-pipeIds-${index}`;
+        const current = selected.props.pipeIds[index] ?? "";
+        const options = [{ value: "", label: "-" }, ...pipesIn(area).map(pipe => ({
+          value: pipe.id, label: pipe.props.entrance,
+        }))];
+        addChoice(testid, `목적지 토관 ${index + 1}`, current, options, value => {
+          const object = liveObject(host, area.id, selected.id);
+          const slots: [string | null, string | null, string | null] = object?.kind === "warpZone"
+            ? [...object.props.pipeIds] : [null, null, null];
+          slots[index] = value === "" ? null : value;
+          return { pipeIds: slots };
+        });
+      }
+      break;
+    case "spring": case "goomba": case "buzzy": case "billCannon": case "hammerBro":
+    case "lakitu": case "blooper": case "podoboo": case "bowser": {
+      const note = document.createElement("p"); note.className = "editor-notice"; note.dataset["testid"] = "object-prop-empty";
+      note.textContent = "설정할 속성이 없습니다";
+      panel.append(note);
+      break;
+    }
+    default: break;
+  }
+  root.append(panel);
+}
+
+export function renderInspector(
+  root: HTMLElement, course: CourseV1, area: AreaV1, kind: PaletteKind, host: InspectorHost, selected?: PlacedObject,
+): void {
+  const document = root.ownerDocument, previewKind = selected?.kind ?? kind, entry = EDITOR_CATALOG[previewKind];
   root.replaceChildren();
-  const heading = document.createElement("h2"); heading.textContent = "속성 미리보기";
+  const heading = document.createElement("h2"); heading.textContent = selected ? "배치된 오브젝트 속성" : "속성 미리보기";
   const subheading = document.createElement("p"); subheading.className = "editor-eyebrow"; subheading.textContent = `${CATALOG_CATEGORIES[entry.category]} / ${entry.placeable ? "배치 요소" : "자동 생성"}`;
   const hero = document.createElement("div"); hero.className = "editor-inspector-hero";
-  const name = document.createElement("h3"); name.textContent = entry.label; name.dataset["testid"] = "preview-kind"; name.dataset["kind"] = kind;
-  hero.append(catalogIcon(document, kind, area.theme, 80), name);
+  const name = document.createElement("h3"); name.textContent = entry.label; name.dataset["testid"] = "preview-kind"; name.dataset["kind"] = previewKind;
+  hero.append(catalogIcon(document, previewKind, area.theme, 80), name);
   const properties = document.createElement("dl"); properties.className = "editor-facts";
   const row = (label: string, value: string) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = label; dd.textContent = value; properties.append(dt, dd); };
   row("기준 격자", "16×16픽셀");
-  if ("defaults" in entry && typeof entry.defaults !== "function") {
-    for (const [key, value] of Object.entries(entry.defaults)) {
-      const field = Object.entries(entry.properties).find(([prop]) => prop === key)?.[1];
-      row(field?.label ?? key, typeof value === "object" ? JSON.stringify(value) : String(value));
-    }
-  } else row("기본 속성", kind === "piranha" ? "연결할 토관이 필요합니다" : "배치 위치에서 결정됩니다");
+  if (!selected) {
+    if ("defaults" in entry && typeof entry.defaults !== "function") {
+      for (const [key, value] of Object.entries(entry.defaults)) {
+        const field = Object.entries(entry.properties).find(([prop]) => prop === key)?.[1];
+        row(field?.label ?? key, typeof value === "object" ? JSON.stringify(value) : String(value));
+      }
+    } else row("기본 속성", kind === "piranha" ? "연결할 토관이 필요합니다" : "배치 위치에서 결정됩니다");
+  }
   const notice = document.createElement("p"); notice.className = "editor-notice"; notice.textContent = "타일 그리기·지우기·채우기를 사용할 수 있습니다. 선택 도구로 복사·이동하고, 시작/목표는 아래에서 배치합니다.";
   const draft = document.createElement("label");
   const error = document.createElement("p"); error.className = "editor-notice"; error.dataset["testid"] = "property-error"; error.hidden = true;
-  if (kind === "platform") {
+  if (!selected && kind === "platform") {
     draft.append("길이 초안");
     const input = document.createElement("input"); input.type = "number"; input.dataset["testid"] = "property-length";
     input.value = "3"; input.min = "2"; input.max = "8"; input.autocomplete = "off";
@@ -258,6 +508,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
   pipePanel.append(pipeHeading, pipeActions, linkA, linkB, slots[0]!, slots[1]!, slots[2]!, warpOut);
 
   root.append(heading, subheading, hero, properties, notice, coursePanel);
-  if (kind === "platform") root.append(draft, error);
+  if (selected) appendObjectProperties(root, document, course, area, selected, host);
+  if (!selected && kind === "platform") root.append(draft, error);
   root.append(areaPanel, pipePanel);
 }

@@ -1,4 +1,4 @@
-import { createObject, TILE_CATALOG, type ObjectRequest, validateObjectProperties } from "../level/catalog";
+import { createObject, TILE_CATALOG, type ObjectRequest } from "../level/catalog";
 import type {
   AreaV1, BlockContent, CourseV1, PlacedObject, TileCell, TileKind, ValidationResult,
 } from "../level/types";
@@ -14,6 +14,7 @@ export type PasteResult = Readonly<{ course: CourseV1; omittedIds: readonly stri
 const missingArea: ValidationResult<never> = { ok: false, error: { code: "invalid_reference", path: "$.areaId", message: "Placement area does not exist" } };
 const outOfBounds: ValidationResult<never> = { ok: false, error: { code: "out_of_bounds", path: "$.cells", message: "Edit must fit the area" } };
 const invalidCell: ValidationResult<never> = { ok: false, error: { code: "invalid_value", path: "$.cells", message: "Cells must use integer coordinates" } };
+const missingObject: ValidationResult<never> = { ok: false, error: { code: "invalid_reference", path: "$.objectId", message: "Choose an object in this area" } };
 
 function assertNever(value: never): never { throw new Error(`Unsupported command variant: ${String(value)}`); }
 function areaById(course: CourseV1, areaId: string): AreaV1 | undefined {
@@ -107,14 +108,98 @@ export function placeObject(course: CourseV1, areaId: string, request: ObjectReq
   return validateCourse(replaceArea(course, areaId, { ...area, objects: [...area.objects, created.value] }));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function destinationOf(props: unknown): Readonly<{ areaId: string; pipeId: string }> | undefined {
+  if (!isRecord(props) || !isRecord(props["destination"])) return undefined;
+  const areaId = props["destination"]["areaId"], pipeId = props["destination"]["pipeId"];
+  return typeof areaId === "string" && typeof pipeId === "string" ? { areaId, pipeId } : undefined;
+}
+
+function pairIdOf(props: unknown): string | undefined {
+  if (!isRecord(props) || props["motion"] !== "balance") return undefined;
+  const pairId = props["pairId"];
+  return typeof pairId === "string" ? pairId : undefined;
+}
+
+function applyPropertyEdit(course: CourseV1, areaId: string, object: PlacedObject, props: unknown): CourseV1 {
+  if (object.kind === "piranha" && isRecord(props) && typeof props["pipeId"] === "string") {
+    const pipeId = props["pipeId"];
+    const pipe = areaById(course, areaId)?.objects.find((item) => item.id === pipeId);
+    if (pipe?.kind === "pipe") {
+      return {
+        ...course,
+        areas: course.areas.map((area) => area.id !== areaId ? area : {
+          ...area,
+          objects: derivePiranhas(area.objects.map((item) => item.id === object.id
+            ? { id: object.id, kind: "piranha" as const, x: pipe.x, y: pipe.y - pipe.props.height * 16, props: { pipeId } }
+            : item)),
+        }),
+      };
+    }
+  }
+  if (object.kind === "pipe") {
+    const dest = destinationOf(props);
+    return {
+      ...course,
+      areas: course.areas.map((area) => ({
+        ...area,
+        objects: derivePiranhas(area.objects.map((item) => {
+          if (item.id === object.id && item.kind === "pipe") return { ...item, props } as PlacedObject;
+          if (item.kind !== "pipe") return item;
+          if (dest && item.id === dest.pipeId) {
+            return {
+              ...item,
+              props: { height: item.props.height, entrance: item.props.entrance, destination: { areaId, pipeId: object.id } },
+            };
+          }
+          if (item.props.destination?.pipeId === object.id || (dest !== undefined && item.props.destination?.pipeId === dest.pipeId)) {
+            return { ...item, props: { height: item.props.height, entrance: item.props.entrance } };
+          }
+          return item;
+        })),
+      })),
+    };
+  }
+  if (object.kind === "platform") {
+    const pairId = pairIdOf(props);
+    return {
+      ...course,
+      areas: course.areas.map((area) => area.id !== areaId ? area : {
+        ...area,
+        objects: area.objects.map((item) => {
+          if (item.id === object.id && item.kind === "platform") return { ...item, props } as PlacedObject;
+          if (item.kind !== "platform") return item;
+          if (pairId && item.id === pairId) {
+            return {
+              id: item.id, kind: "platform" as const, x: item.x, y: item.y,
+              props: { motion: "balance" as const, length: item.props.length, travel: item.props.travel, speed: item.props.speed, pairId: object.id },
+            };
+          }
+          if (item.props.motion === "balance" && item.props.pairId === object.id) return withoutPairId(item);
+          if (pairId && item.props.motion === "balance" && item.props.pairId === pairId) return withoutPairId(item);
+          return item;
+        }),
+      }),
+    };
+  }
+  return {
+    ...course,
+    areas: course.areas.map((area) => area.id !== areaId ? area : {
+      ...area,
+      objects: area.objects.map((item) => item.id === object.id ? { ...item, props } as PlacedObject : item),
+    }),
+  };
+}
+
 export function setObjectProperties(course: CourseV1, areaId: string, objectId: string, props: unknown): ValidationResult<CourseV1> {
-  const checked = validateObjectProperties({ course, areaId }, objectId, props);
-  if (!checked.ok) return checked;
   const area = areaById(course, areaId);
   if (!area) return missingArea;
-  return validateCourse(replaceArea(course, areaId, {
-    ...area, objects: area.objects.map((object) => object.id === objectId ? checked.value : object),
-  }));
+  const object = area.objects.find((item) => item.id === objectId);
+  if (!object) return missingObject;
+  return validateCourse(applyPropertyEdit(course, areaId, object, props));
 }
 
 export function setCourseFields(course: CourseV1, patch: Readonly<{ title?: string; timerSeconds?: number }>): ValidationResult<CourseV1> {
