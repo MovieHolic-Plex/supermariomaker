@@ -17,6 +17,8 @@ const KEYS: Record<RouteKey, string> = {
 };
 const ALL_KEYS = Object.values(KEYS);
 const THEMES: readonly SampleTheme[] = ["overworld", "underground", "underwater", "castle"];
+/** Spawn y is 96; 80px puts Bowser in the pit gap (feet near the collapsed bridge at y=208). */
+const BOWSER_FALL_DROP = 80;
 interface Match {
   mode?: PlayObservation["mode"]; initial?: boolean; tickMin?: number; cleared?: boolean;
   event?: GameEvent["type"]; ending?: "flag" | "castle"; phase?: "slide" | "walk" | "wait" | "collapse" | "fall";
@@ -114,15 +116,15 @@ export async function samples(evidence: string, origin: string) {
       actions.push({ completed: action, tick: observed.runtime?.tick, mode: observed.mode, x: observed.runtime?.player.x });
       return observed;
     };
-    const capture = async (theme: Theme, phase: "beginning" | "interaction" | "ending") => {
+    const capture = async (theme: Theme, phase: "beginning" | "interaction" | "ending", name = `${theme}-${phase}`) => {
       const observed = await state(page);
-      const file = `${evidence}/${theme}-${phase}.png`;
+      const file = `${evidence}/${name}.png`;
       const png = await page.screenshot({ path: file, animations: "disabled" });
       const dialog = await page.getByTestId("clear-dialog").evaluate(el => ({
         hidden: (el as HTMLElement).hidden, ending: (el as HTMLElement).dataset["ending"] ?? null, text: el.textContent,
       }));
       const king = observed.runtime?.hazards.actors.find(actor => actor.kind === "bowser") ?? null;
-      captures.push({ theme, phase, file: resolve(file), sha256: sha(png), bytes: png.byteLength,
+      captures.push({ theme, phase, name, file: resolve(file), sha256: sha(png), bytes: png.byteLength,
         tick: observed.runtime?.tick, mode: observed.mode, dialog, player: observed.view?.player,
         ending: observed.runtime?.ending ?? null,
         collapsed: observed.runtime?.areas.some(area => area.collapsedGoalIds.length > 0) ?? false,
@@ -168,17 +170,24 @@ export async function samples(evidence: string, origin: string) {
         assert.equal(axe.runtime?.ending.kind, "castle");
         await hold(page, []);
         const startY = bowserY(axe) === -Infinity ? 208 : bowserY(axe);
-        await observe({ ending: "castle", bowserYMin: startY + 8 }, `${theme} bowser-fall`, undefined, timeoutMs);
-        await observe({ mode: "PAUSED" }, `${theme} pause ending`, () => page.keyboard.press("Escape"));
-        const endingShot = await capture(theme, "ending");
-        const ending = endingShot.runtime?.ending;
-        assert.equal(endingShot.mode, "PAUSED");
-        assert.equal(ending?.kind, "castle");
-        assert.equal(ending && "phase" in ending ? ending.phase : "", "fall");
-        assert.equal(endingShot.runtime?.areas.some(area => area.collapsedGoalIds.length > 0), true);
-        assert.ok(bowserY(endingShot) >= startY + 8, "Bowser must have dropped through the collapsed bridge");
-        assert.equal(endingShot.events.some(event => event.type === "courseClear"), false);
-        await observe({ mode: "PLAYING" }, `${theme} resume ending`, () => page.getByTestId("resume").click());
+        const fallY = startY + BOWSER_FALL_DROP;
+        await observe({ ending: "castle", bowserYMin: fallY }, `${theme} bowser-fall`, undefined, timeoutMs);
+        await observe({ mode: "PAUSED" }, `${theme} pause fall`, () => page.keyboard.press("Escape"));
+        const fallShot = await capture(theme, "ending", "castle-bridge-fall");
+        const fallEnding = fallShot.runtime?.ending;
+        const capturedY = bowserY(fallShot);
+        assert.equal(fallShot.mode, "PAUSED");
+        assert.equal(fallEnding?.kind, "castle");
+        assert.equal(fallEnding && "phase" in fallEnding ? fallEnding.phase : "", "fall");
+        assert.equal(fallShot.runtime?.areas.some(area => area.collapsedGoalIds.length > 0), true);
+        assert.ok(capturedY >= fallY, `Bowser must have dropped through the collapsed bridge (y=${capturedY} startY=${startY})`);
+        assert.equal(fallShot.events.some(event => event.type === "courseClear"), false);
+        actions.push({
+          captured: "castle-bridge-fall", tick: fallShot.runtime?.tick, bowserY: capturedY, startY,
+          drop: capturedY - startY, subscribedY: fallY,
+          phase: fallEnding && "phase" in fallEnding ? fallEnding.phase : null,
+        });
+        await observe({ mode: "PLAYING" }, `${theme} resume fall`, () => page.getByTestId("resume").click());
       }
       const cleared = await observe({ cleared: true, mode: "CLEARED" }, `${theme} clear`, undefined, timeoutMs);
       assert.equal(cleared.mode, "CLEARED");
@@ -188,8 +197,17 @@ export async function samples(evidence: string, origin: string) {
       assert(dialog.text && /클리어/.test(dialog.text));
       if (theme === "castle") {
         assert(cleared.events.some(event => event.type === "courseClear" && event.ending === "castle"));
+        assert(dialog.text && /성 클리어/.test(dialog.text));
       }
-      if (theme !== "castle") await capture(theme, "ending");
+      const endingShot = await capture(theme, "ending");
+      if (theme === "castle") {
+        assert.equal(endingShot.mode, "CLEARED");
+        assert.equal(endingShot.runtime?.areas.some(area => area.collapsedGoalIds.length > 0), true);
+        actions.push({
+          captured: "castle-ending", tick: endingShot.runtime?.tick, mode: endingShot.mode, dialog,
+          collapsed: true, courseClear: endingShot.events.some(event => event.type === "courseClear"),
+        });
+      }
       await hold(page, []);
       actions.push({ outcome: `${theme}-cleared`, tick: cleared.runtime?.tick, ending: cleared.runtime?.ending });
     }
