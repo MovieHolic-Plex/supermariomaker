@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { chromium, type Page } from "playwright-core";
+import { chromium, type Locator, type Page } from "playwright-core";
 import type { EditorViewState } from "../../src/ui/editor";
 import type { CourseV1, PlacedObject } from "../../src/level/types";
 import { serializeCourse } from "../../src/level/serialize";
@@ -56,6 +56,19 @@ function pipesOf(course: CourseV1): readonly PlacedObject[] {
 }
 function objectsByKind(course: CourseV1, kind: PlacedObject["kind"]): readonly PlacedObject[] {
   return areaOf(course).objects.filter(object => object.kind === kind);
+}
+
+async function assertFullyInViewport(page: Page, locator: Locator, name: string) {
+  const bounds = await locator.boundingBox();
+  assert(bounds, `${name} has no bounding box`);
+  const viewport = page.viewportSize();
+  assert(viewport, `${name} missing viewport`);
+  assert(bounds.width > 0 && bounds.height > 0, `${name} empty box`);
+  assert(
+    bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= viewport.width && bounds.y + bounds.height <= viewport.height,
+    `${name} not fully in viewport: ${JSON.stringify(bounds)} vs ${JSON.stringify(viewport)}`,
+  );
+  return bounds;
 }
 
 async function withEditor(evidence: string, origin: string, run: (page: Page) => Promise<unknown>) {
@@ -209,10 +222,22 @@ export async function selectionEdge(evidence: string, origin: string) {
     const error = page.getByTestId("course-timer-error");
     assert.equal(await error.isVisible(), true);
     assert.match(await error.textContent() ?? "", /invalid_value:\$\.timerSeconds/);
+    assert.equal(await page.getByTestId("course-timer").getAttribute("aria-invalid"), "true");
+    assert.equal(await page.getByTestId("course-timer").evaluate(node => node.classList.contains("editor-field-invalid")), true);
+    const timerBox = await assertFullyInViewport(page, page.getByTestId("course-timer"), "course-timer");
+    const errorBox = await assertFullyInViewport(page, error, "course-timer-error");
+    assert(errorBox.y + 0.5 >= timerBox.y, "timer error must sit with the field");
     const previewed = await snapshot(page);
     assert.equal(previewed.course.timerSeconds, before.course.timerSeconds);
     assert.equal(previewed.state.undoCount, before.state.undoCount);
-    captures.push({ step: "timer-29-preview-no-write", timer: previewed.course.timerSeconds, ...(await capture(page, `${evidence}/timer-invalid.png`)) });
+    captures.push({
+      step: "timer-29-preview-no-write",
+      timer: previewed.course.timerSeconds,
+      errorInViewport: true,
+      timerBox,
+      errorBox,
+      ...(await capture(page, `${evidence}/timer-invalid.png`)),
+    });
     await action(page, "tool", () => page.getByTestId("tool-paint").click());
     await action(page, "category", () => page.getByTestId("category-enemies").click());
     await action(page, "palette", () => page.getByTestId("palette-goomba").click());

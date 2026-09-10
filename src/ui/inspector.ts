@@ -79,12 +79,21 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
 
   const coursePanel = document.createElement("section"); coursePanel.className = "editor-area-panel"; coursePanel.dataset["testid"] = "course-panel";
   const courseHeading = document.createElement("h3"); courseHeading.className = "editor-section-heading"; courseHeading.textContent = "코스 속성";
-  const timerLabel = document.createElement("label"); timerLabel.append("제한 시간(초, 0=무제한)");
+  const timerLabel = document.createElement("label"); timerLabel.className = "editor-field";
+  const timerCaption = document.createElement("span"); timerCaption.className = "editor-field-caption"; timerCaption.textContent = "제한 시간 (초)";
+  const timerHint = document.createElement("span"); timerHint.className = "editor-field-hint"; timerHint.textContent = "0=무제한";
   const timer = document.createElement("input"); timer.type = "number"; timer.dataset["testid"] = "course-timer";
   timer.value = String(course.timerSeconds); timer.min = "0"; timer.max = "999"; timer.step = "1"; timer.autocomplete = "off";
-  const timerError = document.createElement("p"); timerError.className = "editor-notice"; timerError.dataset["testid"] = "course-timer-error"; timerError.hidden = true;
-  const showTimer = (message: string) => { timerError.hidden = false; timerError.textContent = message; timer.setCustomValidity(message); };
-  const hideTimer = () => { timerError.hidden = true; timerError.textContent = ""; timer.setCustomValidity(""); };
+  const timerError = document.createElement("p"); timerError.className = "editor-notice editor-field-error"; timerError.dataset["testid"] = "course-timer-error"; timerError.hidden = true;
+  const showTimer = (message: string) => {
+    timerError.hidden = false; timerError.textContent = message; timer.setCustomValidity(message);
+    timer.classList.add("editor-field-invalid"); timer.setAttribute("aria-invalid", "true");
+    timerLabel.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  const hideTimer = () => {
+    timerError.hidden = true; timerError.textContent = ""; timer.setCustomValidity("");
+    timer.classList.remove("editor-field-invalid"); timer.setAttribute("aria-invalid", "false");
+  };
   timer.addEventListener("input", () => {
     const result = setCourseFields(host.history.document(), { timerSeconds: Number(timer.value) });
     if (result.ok) hideTimer();
@@ -99,7 +108,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
       host.onRejected();
     }
   });
-  timerLabel.append(timer);
+  timerLabel.append(timerCaption, timerHint, timer, timerError);
   const placeStart = document.createElement("button"); placeStart.type = "button"; placeStart.dataset["testid"] = "place-start"; placeStart.textContent = "시작 위치";
   placeStart.addEventListener("click", () => host.onPlaceStart());
   const placeFlag = document.createElement("button"); placeFlag.type = "button"; placeFlag.dataset["testid"] = "place-flag"; placeFlag.textContent = "깃발 목표";
@@ -108,7 +117,7 @@ export function renderInspector(root: HTMLElement, course: CourseV1, area: AreaV
   placeCastle.addEventListener("click", () => host.onPlaceCastle());
   const placeActions = document.createElement("div"); placeActions.className = "editor-area-actions";
   placeActions.append(placeStart, placeFlag, placeCastle);
-  coursePanel.append(courseHeading, timerLabel, timerError, placeActions);
+  coursePanel.append(courseHeading, timerLabel, placeActions);
 
   const areaPanel = document.createElement("section"); areaPanel.className = "editor-area-panel"; areaPanel.dataset["testid"] = "area-panel";
   const areaHeading = document.createElement("h3"); areaHeading.className = "editor-section-heading"; areaHeading.textContent = "영역 관리";

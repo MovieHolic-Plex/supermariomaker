@@ -78,7 +78,12 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-status-note { display:flex; align-items:center; gap:8px; color:#8f4228; min-width:0; min-height:44px; }
 .editor-status output { font:12px/1.5 "Malgun Gothic",monospace; color:var(--ed-muted); white-space:nowrap; }
 .editor-area-actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
-.editor-inspector label { display:block; margin:8px 0; font-size:12px; }
+.editor-inspector label { display:block; margin:8px 0; font-size:12px; max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
+.editor-field { max-width:100%; }
+.editor-field-caption, .editor-field-hint { display:block; max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
+.editor-field-hint { color:var(--ed-muted); font-size:11px; margin:2px 0 4px; }
+.editor-notice.editor-field-error { margin:6px 0 0; border-left-color:#c04426; background:#fde8e0; color:#8f301b; }
+.editor-view .editor-inspector input.editor-field-invalid { border-color:#c04426; background:#fff5f1; box-shadow:inset 0 0 0 1px #c04426; }
 .editor-inspector output { display:block; margin:8px 0; min-height:44px; padding:10px; background:#f7eedc; }
 @media(min-width:1600px) { .editor-workspace { grid-template-columns:240px minmax(0,1fr) 280px; gap:18px; padding:18px 20px; } .editor-palette-list button { min-height:64px; } }
 `;
