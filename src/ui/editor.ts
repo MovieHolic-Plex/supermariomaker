@@ -11,6 +11,7 @@ import { EDITOR_CSS } from "./editor-style";
 import { catalogIcon, EDITOR_CATALOG, EDITOR_THEMES, renderInspector, type InspectorHost, type PaletteKind } from "./inspector";
 import { createToolbar } from "./toolbar";
 
+export type EditorSaveStatus = "unsupported" | "saved" | "dirty" | "failed" | "unavailable";
 export interface EditorViewState {
   readonly areaId: string;
   readonly viewport: Viewport;
@@ -27,6 +28,9 @@ export interface EditorViewState {
   readonly dirty: boolean;
   readonly lastOutcome: "committed" | "noop" | "rejected" | "cancelled" | null;
   readonly preview: Readonly<{ cells: number; clipped: boolean; outOfBounds: boolean }> | null;
+  readonly saveStatus: EditorSaveStatus;
+  readonly saveErrorKind: string | null;
+  readonly saveRecovery: readonly string[] | null;
 }
 export interface EditorViewOptions {
   /** A validated document. The view takes a copy and never writes to the supplied Course. */
@@ -37,6 +41,8 @@ export interface EditorViewOptions {
   readonly onViewportChange?: (viewport: Viewport) => void;
   /** Observation/proposal only: the host owns any eventual authoring command. */
   readonly onCanvasPoint?: (point: Readonly<{ areaId: string; world: Point; cell: Point }>) => void;
+  readonly onAuthoredChange?: (course: CourseV1) => void;
+  readonly onSaveRetry?: () => void;
 }
 export interface EditorView {
   readonly element: HTMLElement;
@@ -45,6 +51,7 @@ export interface EditorView {
   /** Host supplies the next fully validated authoring result; this is not a document writer. */
   setCourse(course: CourseV1): void;
   setViewport(viewport: Viewport): void;
+  setSaveStatus(status: EditorSaveStatus, detail?: Readonly<{ errorKind?: string | null; recovery?: readonly string[] | null }>): void;
   dispose(): void;
 }
 
@@ -71,7 +78,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       lastOutcome = "committed";
       course = history.document();
       if (selectAreaId && course.areas.some(item => item.id === selectAreaId)) area = selectedArea(selectAreaId);
-      applyDocument(); render("command");
+      applyDocument(); render("command"); options.onAuthoredChange?.(history.document());
     },
     onRejected() { lastOutcome = "rejected"; syncHistory(); renderInspector(inspector, course, area, kind, inspectorHost); render("command"); },
   };
@@ -85,6 +92,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   let drag: Readonly<{ id: number; start: Point; view: Viewport }> | null = null;
   let paint: Readonly<{ id: number; gesture: PaintGesture }> | null = null;
   let tool: PaintTool | null = null, lastOutcome: EditorViewState["lastOutcome"] = null;
+  let saveStatus: EditorSaveStatus = "unsupported", saveErrorKind: string | null = null, saveRecovery: readonly string[] | null = null;
   let disposed = false;
   const chunks = new Map<string, HTMLCanvasElement>();
   const panel = document.createElement("main"); panel.className = "editor-view"; panel.dataset["testid"] = "editor-view"; panel.setAttribute("aria-label", "코스 편집기 미리보기");
@@ -124,6 +132,10 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   workspace.append(palette, stage, inspector);
   const status = document.createElement("footer"); status.className = "editor-status"; status.dataset["testid"] = "editor-status";
   const statusNote = document.createElement("span"); statusNote.className = "editor-status-note"; statusNote.dataset["testid"] = "save-status";
+  const saveLabel = document.createElement("span");
+  const saveRetry = document.createElement("button"); saveRetry.type = "button"; saveRetry.dataset["testid"] = "save-retry"; saveRetry.textContent = "다시 시도"; saveRetry.hidden = true;
+  saveRetry.addEventListener("click", () => options.onSaveRetry?.(), listener);
+  statusNote.append(saveLabel);
   const coordinates = document.createElement("output"); coordinates.dataset["testid"] = "viewport-status";
   status.append(statusNote, coordinates); panel.append(style, toolbar.header, toolbar.tools, workspace, status); root.replaceChildren(panel);
 
@@ -144,15 +156,27 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       areaId: area.id, viewport: { ...view }, paletteKind: kind, titleDraft, hoveredCell: hoveredCell && { ...hoveredCell },
       grid, panning: drag !== null, size: { ...size }, dpr, tool, undoCount: snap.undoCount, redoCount: snap.redoCount,
       dirty: snap.dirty, lastOutcome, preview: livePreview(),
+      saveStatus, saveErrorKind, saveRecovery,
     };
   }
   function publish(reason: string): void {
     panel.dispatchEvent(new CustomEvent("editor-view-state", { bubbles: true, detail: { reason, ...getState() } }));
   }
+  function renderSave(): void {
+    statusNote.dataset["status"] = saveStatus;
+    saveLabel.textContent = saveStatus === "saved" ? "저장됨"
+      : saveStatus === "dirty" ? "편집됨"
+      : saveStatus === "failed" ? "저장 실패"
+      : saveStatus === "unavailable" ? "로컬 저장 불가"
+      : historyCounts().dirty ? "편집됨 · 저장 미지원" : "원본과 동일 · 저장 미지원";
+    const retry = saveStatus === "failed" && saveRecovery?.includes("retry") === true;
+    if (retry) { saveRetry.hidden = false; if (!saveRetry.isConnected) statusNote.append(saveRetry); saveRetry.disabled = false; }
+    else saveRetry.remove();
+  }
   function syncHistory(): void {
     const snap = historyCounts();
     toolbar.setHistory({ undo: snap.undoCount, redo: snap.redoCount });
-    statusNote.textContent = snap.dirty ? "편집됨 · 저장 미지원" : "원본과 동일 · 저장 미지원";
+    if (saveStatus === "unsupported") renderSave();
   }
   function applyDocument(): void {
     course = history.document(); area = selectedArea(course.areas.some(item => item.id === area.id) ? area.id : course.mainAreaId);
@@ -160,9 +184,11 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
   }
   function undo(): void {
     cancelPaint(); if (!history.undo()) return; lastOutcome = null; applyDocument(); render("undo");
+    options.onAuthoredChange?.(history.document());
   }
   function redo(): void {
     cancelPaint(); if (!history.redo()) return; lastOutcome = null; applyDocument(); render("redo");
+    options.onAuthoredChange?.(history.document());
   }
   function cancelPaint(): void {
     if (!paint) return;
@@ -180,6 +206,7 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
     if (outcome.status === "committed") applyDocument();
     else syncHistory();
     render(reason);
+    if (outcome.status === "committed") options.onAuthoredChange?.(history.document());
   }
   function updateAreas(): void {
     areas.replaceChildren(...course.areas.map(item => {
@@ -340,6 +367,14 @@ export function mountEditor(root: HTMLElement, options: EditorViewOptions): Edit
       titleDraft = course.title; toolbar.setTitle(course.title); lastOutcome = null; chunks.clear();
       updateAreas(); updatePalette(); renderInspector(inspector, course, area, kind, inspectorHost); syncHistory(); render("course");
     },
-    setViewport(next) { clearInput(); view = { ...next }; render("viewport"); }, dispose,
+    setViewport(next) { clearInput(); view = { ...next }; render("viewport"); },
+    setSaveStatus(status, detail) {
+      saveStatus = status;
+      saveErrorKind = detail?.errorKind ?? null;
+      saveRecovery = detail?.recovery ?? null;
+      renderSave();
+      publish("save");
+    },
+    dispose,
   };
 }

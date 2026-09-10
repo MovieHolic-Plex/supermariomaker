@@ -4,10 +4,14 @@ import { mountFixtureGallery } from "./ui/fixture-gallery";
 import { mountPlayGallery } from "./ui/play-gallery";
 import { createNewCourse } from "./level/catalog";
 import { validateCourse } from "./level/validate";
-import { mountNormalEditor } from "./ui/editor-gallery";
+import { mountNormalEditor, type EditorPersistence } from "./ui/editor-gallery";
+import { openDatabase, type DatabaseHandle } from "./storage/db";
+import { loadLastOpen } from "./storage/host";
+import type { CourseV1 } from "./level/types";
 
-const app = document.getElementById("app");
-if (!app) throw new Error("Missing app mount");
+const root = document.getElementById("app");
+if (!root) throw new Error("Missing app mount");
+const app: HTMLElement = root;
 
 if (new URLSearchParams(location.search).get("qa") === "audio") {
   mountAudioGallery(app);
@@ -54,11 +58,23 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
     main.append(alert);
   }
 
-  if (editorAvailable) {
+  function openEditor(course: CourseV1, persistence: EditorPersistence, notice?: Element | null) {
+    const host = document.createElement("div"), editorRoot = document.createElement("div");
+    host.className = "normal-editor-host"; editorRoot.className = "normal-editor-root";
+    host.append(editorRoot); app.append(host);
+    const editor = mountNormalEditor(editorRoot, course, persistence);
+    if (notice) host.prepend(notice);
+    app.replaceChildren(host);
+    editor.element.querySelector<HTMLElement>('[data-testid="editor-canvas"]')?.focus();
+    document.title = `${course.title} | 코스 메이커`;
+  }
+
+  function showLibrary(persistence: EditorPersistence) {
+    if (!editorAvailable) return;
     const library = document.createElement("section");
     library.dataset["testid"] = "library";
     library.className = "library";
-    library.innerHTML = '<p class="eyebrow">나의 코스</p><h1>새로운 모험의 시작</h1><p>첫 코스의 이름을 정하고 작업실을 열어 보세요.</p><p class="muted">코스 화면 이동·확대와 요소 미리보기를 사용할 수 있습니다. 편집, 플레이, 저장 및 파일 기능은 아직 제공되지 않습니다.</p>';
+    library.innerHTML = '<p class="eyebrow">나의 코스</p><h1>새로운 모험의 시작</h1><p>첫 코스의 이름을 정하고 작업실을 열어 보세요.</p><p class="muted">코스 화면 이동·확대와 타일 편집을 사용할 수 있습니다. 플레이, 선택 도구 및 파일 기능은 아직 제공되지 않습니다.</p>';
     const newCourse = document.createElement("button");
     newCourse.dataset["testid"] = "new-course";
     newCourse.textContent = "새 코스 만들기";
@@ -94,7 +110,6 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
         title.reportValidity();
         return;
       }
-      // The catalog owns the exact seed; the form title crosses the existing validator once.
       try {
         const seed = createNewCourse({ courseId: crypto.randomUUID(), areaId: crypto.randomUUID(), goalId: crypto.randomUUID() });
         if (!seed.ok) throw new Error(`${seed.error.code}: ${seed.error.message}`);
@@ -102,15 +117,8 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
         if (!result.ok) {
           title.setCustomValidity(result.error.message); title.reportValidity(); return;
         }
-        const host = document.createElement("div"), editorRoot = document.createElement("div");
-        host.className = "normal-editor-host"; editorRoot.className = "normal-editor-root";
         const notice = main.querySelector('[data-testid="error-dialog"]');
-        host.append(editorRoot); app.append(host);
-        const editor = mountNormalEditor(editorRoot, result.value);
-        if (notice) host.prepend(notice);
-        app.replaceChildren(host);
-        editor.element.querySelector<HTMLElement>('[data-testid="editor-canvas"]')?.focus();
-        document.title = `${result.value.title} | 코스 메이커`;
+        openEditor(result.value, { ...persistence, expectedStoredRevision: null }, notice);
       } catch (error) {
         app.querySelector(".normal-editor-host")?.remove();
         const failure = document.createElement("p"); failure.setAttribute("role", "alert");
@@ -122,4 +130,44 @@ if (new URLSearchParams(location.search).get("qa") === "audio") {
     library.append(newCourse, form);
     main.append(library);
   }
+
+  async function bootWorkspace() {
+    let db: DatabaseHandle | null = null;
+    let unavailable = !storageAvailable;
+    if (storageAvailable) {
+      const opened = await openDatabase();
+      if (opened.ok) db = opened.db;
+      else {
+        unavailable = true;
+        if (!main.querySelector('[data-testid="error-dialog"]')) {
+          const alert = document.createElement("section");
+          alert.className = "notice";
+          alert.dataset["testid"] = "error-dialog";
+          alert.setAttribute("role", "alert");
+          const message = document.createElement("p");
+          message.textContent = "로컬 저장 불가: 브라우저 저장소를 열 수 없습니다. 메모리에서 편집할 수 있습니다.";
+          const retry = document.createElement("button");
+          retry.dataset["testid"] = "retry";
+          retry.textContent = "다시 시도";
+          retry.addEventListener("click", () => location.reload());
+          alert.append(message, retry);
+          main.append(alert);
+        }
+      }
+    }
+    const persistence: EditorPersistence = { db, expectedStoredRevision: null, unavailable };
+    if (db) {
+      const last = await loadLastOpen(db);
+      if (last) {
+        const result = validateCourse(last.document);
+        if (result.ok) {
+          openEditor(result.value, { db, expectedStoredRevision: result.value.revision, unavailable: false }, main.querySelector('[data-testid="error-dialog"]'));
+          return;
+        }
+      }
+    }
+    showLibrary(persistence);
+  }
+
+  if (editorAvailable) void bootWorkspace();
 }

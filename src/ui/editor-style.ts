@@ -11,7 +11,7 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-grid-toggle input { min-height:18px; }
 .editor-view p { max-width:none; }
 .editor-view header { flex-wrap:nowrap; justify-content:normal; }
-.editor-view { --ed-ink:#26323c; --ed-muted:#596772; --ed-line:#d7dcd9; --ed-paper:#fffcf5; --ed-accent:#c04426; box-sizing:border-box; height:100%; min-height:620px; display:grid; grid-template-rows:88px 64px minmax(0,1fr) 44px; overflow:hidden; background:#eeeae0; color:var(--ed-ink); font:14px/1.5 "Malgun Gothic", "맑은 고딕", system-ui, sans-serif; text-align:left; }
+.editor-view { --ed-ink:#26323c; --ed-muted:#596772; --ed-line:#d7dcd9; --ed-paper:#fffcf5; --ed-accent:#c04426; box-sizing:border-box; height:100%; min-height:620px; display:grid; grid-template-rows:88px 64px minmax(0,1fr) 56px; overflow:hidden; background:#eeeae0; color:var(--ed-ink); font:14px/1.5 "Malgun Gothic", "맑은 고딕", system-ui, sans-serif; text-align:left; }
 .editor-view *, .editor-view *::before, .editor-view *::after { box-sizing:border-box; }
 .editor-view [hidden] { display:none !important; }
 .editor-view h2, .editor-view h3, .editor-view p { margin:0; }
@@ -75,7 +75,7 @@ main.editor-view { max-width:none; margin:0; padding:0; }
 .editor-notice { padding:10px; border-left:3px solid #c98d39; background:#f7eedc; font-size:12px; line-height:1.7; word-break:keep-all; overflow-wrap:anywhere; }
 .editor-section-heading { border-top:1px solid var(--ed-line); margin-top:20px !important; padding-top:16px; }
 .editor-status { display:flex; align-items:center; justify-content:space-between; gap:16px; border-top:1px solid #c8ccc5; background:var(--ed-paper); padding:0 20px; font-size:12px; }
-.editor-status-note { color:#8f4228; }
+.editor-status-note { display:flex; align-items:center; gap:8px; color:#8f4228; min-width:0; min-height:44px; }
 .editor-status output { font:12px/1.5 "Malgun Gothic",monospace; color:var(--ed-muted); white-space:nowrap; }
 .editor-area-actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
 .editor-inspector label { display:block; margin:8px 0; font-size:12px; }
