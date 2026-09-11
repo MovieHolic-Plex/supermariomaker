@@ -1,67 +1,187 @@
-# 슈퍼 마리오 코스 메이커
+<div align="center">
 
-PC 브라우저에서 슈퍼 마리오 브라더스 1처럼 보이고 느껴지는 코스를 만들고, 바로 테스트하고, 이 컴퓨터에만 저장하거나 JSON 파일로 내보내는 로컬 메이커입니다.
+# 🍄 슈퍼 마리오 코스 메이커
 
-이 문서는 사용자 화면과 같은 한국어로 적었습니다. 명령, 파일 경로, 스키마 필드, 키 코드는 코드와 같이 영어 그대로 둡니다. 조작 상세는 [`docs/controls.md`](docs/controls.md), 파일 형식은 [`docs/format.md`](docs/format.md), 그림·음악 출처는 [`docs/assets.md`](docs/assets.md)를 보세요.
+**브라우저에서 만드는 나만의 SMB1 스타일 코스 — 그리고, 바로 플레이하고, 파일로 공유하세요**
 
-이 프로젝트는 원작처럼 보이도록 **여기서 새로 작성한** 구현입니다. 닌텐도 게임의 코드, ROM, 악보, 스프라이트를 가져오지 않았고, 원작을 소유한다고 주장하지 않습니다.
+[![Bun](https://img.shields.io/badge/Bun-1.4-f9f1e1?logo=bun&logoColor=000)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org)
+[![런타임 의존성](https://img.shields.io/badge/runtime%20deps-0-brightgreen)](#-기술-스택)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 하는 일
+![코스 편집기](docs/screenshots/editor.png)
 
-- 지상·지하·수중·성 테마의 영역을 편집하고, 타일과 적을 놓고, 토관·발판·목표를 연결합니다.
-- **▶ 플레이**, **커서에서 테스트**, **목표 없이 테스트**로 같은 코스를 즉시 시험합니다. 플레이 중 바꾼 런타임은 편집 원본을 건드리지 않습니다.
-- 브라우저 IndexedDB(`smb1-maker`)에 코스를 자동 저장하고, 보관함에서 열고·이름 바꾸고·복제하고·삭제합니다.
-- `application/json` 코스 파일(`.smb1.json`)을 내보내고 가져옵니다.
+</div>
 
-## 하지 않는 일
+---
 
-- 계정, 온라인 공개, 공유 서버, 멀티플레이, 모바일 편집기는 없습니다.
-- 브라우저 저장은 **영구 백업이 아닙니다.** 사이트를 지우거나, 저장 공간을 회수하거나, 다른 브라우저 프로필을 쓰면 IndexedDB 내용은 사라질 수 있습니다. 남는 백업은 **내보내기**로 받은 JSON 파일입니다.
-- 가져오기는 작업실(편집기) 도구 모음에만 있습니다. 보관함 첫 화면에는 파일 열기가 없고, 네 가지 환경 샘플도 목록에 올라오지 않습니다. 샘플 레이아웃은 소스 `src/level/samples.ts`에 있으며, JSON으로 저장한 뒤 작업실에서 가져옵니다.
-- 원작 버그·프레임 단위 일치를 약속하지 않습니다.
+## ✨ 특징
 
-## 필요 조건
+<table>
+<tr>
+<td width="50%">
 
-- Bun `1.4.0` (`package.json`의 `packageManager` / `engines`).
-- 최신 데스크톱 Chrome, Edge 또는 Firefox. 편집에 Canvas 2D, `structuredClone`, `ResizeObserver`, `crypto.randomUUID`가 필요합니다.
+### 🖌️ 완전한 코스 편집기
+- 그리기 · 지우기 · 사각 채우기 · 선택/이동/복사/붙여넣기
+- 실행 취소/다시 실행 (제스처 단위, 최대 200단계)
+- 1x–8x 줌 · 팬 · 16px 격자 스냅
+- 카테고리 팔레트 + 배치된 오브젝트의 **속성 인스펙터**
+- 시작 위치 · 깃발 목표 · 성 목표 · 파이프 연결/워프존
+- 여러 에어리어(지상 ↔ 지하 등) 생성·연결
 
-## 실행
+</td>
+<td width="50%">
 
-의존성은 이미 설치되어 있으면 `bun install`을 건너뛰어도 됩니다.
+### 🎮 실제로 플레이되는 게임
+- 달리기 · 가변 점프 · 웅크리기 · 수영 · 덩굴 등반
+- 작은 → 슈퍼 → 파이어 마리오, 스타, 1UP
+- 스톰프 · 등껍질 콤보 · 파이어볼 전투
+- 코인 · 점수 · 목숨 · 타이머 · 깃발/도끼 엔딩
+- 편집 ↔ 플레이테스트 즉시 전환 (작성 상태 완전 복원)
 
-개발 서버는 소스를 그때그때 묶어 `http://127.0.0.1:4173`에 띄웁니다.
+</td>
+</tr>
+<tr>
+<td>
+
+### 🗺️ 4가지 테마 · 전체 SMB1 오브젝트
+- **지상 · 지하 · 수중 · 성**
+- 굼바, 초록/빨강 쿠파 & 파라트루파, 피라냐, 버즈, 대포/킬러, 해머 브로, 라키투, 치프치프/블루퍼, 포도부, 파이어바, 쿠파 + 도끼 다리
+- 움직이는/떨어지는/균형 플랫폼, 스프링, 숨은 블록, 덩굴
+
+</td>
+<td>
+
+### 💾 로컬 우선 저장
+- IndexedDB **자동 저장** + 리비전 충돌 감지
+- 코스 보관함: 열기/이름 변경/복제/삭제
+- `.smb1.json` **보내기/가져오기** — 완전 검증되는 이식 가능한 포맷
+- 계정 없음 · 서버 없음 · 설치 없음
+
+</td>
+</tr>
+</table>
+
+🎵 칩튠 사운드트랙(테마별 BGM + 효과음)은 Web Audio로 실시간 합성됩니다.
+
+> **솔직한 범위 안내** — 계정, 온라인 공개, 공유 서버, 멀티플레이, 모바일 편집기는 없습니다. 브라우저 IndexedDB 저장은 **영구 백업이 아닙니다**: 사이트 데이터 삭제·저장 공간 회수·다른 프로필 사용 시 사라질 수 있으므로, 남는 백업은 **보내기**로 받은 JSON 파일입니다. 원작 버그·프레임 단위 일치는 약속하지 않습니다.
+
+---
+
+## 📸 스크린샷
+
+<div align="center">
+<img src="docs/screenshots/library.png" width="720" alt="코스 보관함">
+<p><sub>코스 보관함 — 새로 만들기 · 열기 · 이름 변경 · 복제 · 삭제</sub></p>
+
+<table>
+<tr>
+<td><img src="docs/screenshots/play-overworld.png" alt="지상 테마 플레이"></td>
+<td><img src="docs/screenshots/play-underground.png" alt="지하 테마 플레이"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/play-underwater.png" alt="수중 테마 플레이"></td>
+<td><img src="docs/screenshots/play-castle.png" alt="성 테마 플레이"></td>
+</tr>
+</table>
+<p><sub>지상 · 지하 · 수중 · 성 — 4가지 테마 플레이</sub></p>
+
+<img src="docs/screenshots/playtest.png" width="720" alt="플레이테스트 오버레이">
+<p><sub>에디터 안에서 바로 플레이테스트 — 점수 · 코인 · 목숨 · 시간 HUD</sub></p>
+
+<img src="docs/screenshots/sprites.png" width="720" alt="픽셀 자료실">
+<p><sub>113개 프레임 · 4개 테마 팔레트 — 전부 직접 그린 픽셀 아트</sub></p>
+</div>
+
+---
+
+## 🚀 시작하기
+
+[Bun](https://bun.sh) 1.4+ 만 있으면 됩니다. (다른 런타임 의존성 없음)
 
 ```bash
-bun run dev
+bun install        # 개발 의존성 설치
+bun run dev        # 개발 서버 (http://127.0.0.1:4173)
 ```
 
-배포본처럼 쓰려면 먼저 빌드한 다음, `dist`만 같은 주소에 제공합니다. 알 수 없는 경로는 404 본문 `Not Found`입니다.
+빌드 후 미리보기:
 
 ```bash
-bun run build
-bun run preview
+bun run build      # dist/ 에 브라우저 번들 생성
+bun run preview    # dist 서빙 (http://127.0.0.1:4173)
 ```
 
-`bun run preview`는 `scripts/preview.ts`와 같습니다. 브라우저에서 `http://127.0.0.1:4173/` 을 엽니다.
+브라우저에서 `http://127.0.0.1:4173`을 열고 **새 코스 만들기** → **작업실 열기** → **▶ 플레이**.
 
-### 샘플을 여는 방법
+> 💡 네 가지 테마의 샘플 코스(`솔바람 능선` · `등잔 굴` · `청파 수로` · `불씨 성`)는 `src/level/samples.ts`에 있습니다. JSON으로 저장한 뒤 작업실 도구 모음의 **가져오기**로 열 수 있습니다 — 보관함 첫 화면에는 파일 열기가 없습니다.
 
-1. 보관함에서 **새 코스 만들기**를 누르고 제목을 적은 뒤 **작업실 열기**를 누릅니다. 기본 초안은 제목 기본값 `새 코스`, 지상 256×15칸, 제한 시간 400초, 깃발 목표가 있는 유효한 코스입니다.
-2. 작업실에서 **가져오기**를 눌러 유효한 `.smb1.json`을 고릅니다. 파일이 통과하면 **새 보관함 ID**로 들어가고 그 코스가 열립니다. 파일 안의 코스 `id`로 기존 코스를 덮어쓰지 않습니다.
-3. 소스에 있는 지상 샘플을 JSON으로 저장했다면 제목은 `솔바람 능선`입니다. 지하 `등잔 굴`, 수중 `청파 수로`, 성 `불씨 성`.
+자세한 조작 상세는 [`docs/controls.md`](docs/controls.md), 파일 형식은 [`docs/format.md`](docs/format.md), 그림·음악 출처는 [`docs/assets.md`](docs/assets.md)를 보세요.
 
-다시 같은 출처를 열면, 마지막에 성공적으로 저장·연 코스가 있으면 보관함을 건너뛰고 그 작업실로 들어갑니다.
+## 🕹️ 조작법
 
-### 잘못된 파일을 가져왔을 때
+| 플레이 | 키 |
+| --- | --- |
+| 이동 | `←` `→` 또는 `A` `D` |
+| 점프 / 수영 | `Space` 또는 `Z` |
+| 달리기 / 파이어볼 | `Shift` 또는 `X` |
+| 웅크리기 / 파이프 진입 | `↓` 또는 `S` |
+| 덩굴 타기 | `↑` |
+| 일시정지 | `Esc` |
 
-가져오기는 파일 전체를 검사한 뒤에만 보관함에 넣습니다. JSON이 아니거나, UTF-8이 아니거나, 32 MiB를 넘거나, `version`이 1이 아니거나, 스키마가 맞지 않으면 오류 대화상자가 뜨고 **지금 열린 코스와 보관함은 그대로**입니다. **닫기**를 누른 뒤 편집을 이어가면 됩니다. 자세한 한계는 [`docs/format.md`](docs/format.md)를 보세요.
+| 에디터 | 키 / 동작 |
+| --- | --- |
+| 실행 취소 / 다시 실행 | `Ctrl+Z` / `Ctrl+Y` |
+| 복사 / 붙여넣기 / 삭제 | `Ctrl+C` / `Ctrl+V` / `Delete` |
+| 선택 해제 | `Esc` |
+| 화면 이동 | 휠 드래그 또는 `Space`+드래그 |
+| 줌 | `1x`–`8x` 버튼 (포인터 기준) |
 
-## 검사
+## 🗂️ 코스 파일 형식
+
+코스는 확장자 `.smb1.json`의 **버전 관리된 JSON 문서**(`format: "smb1-maker", version: 1`)로 보내고 가져올 수 있습니다.
+
+- 희소 타일 맵 + 좌표·속성이 있는 배치 오브젝트 목록
+- 파이프 목적지 · 균형 플랫폼 쌍 · 워프존 슬롯 등 교차 참조는 쌍방 검증
+- 최대 32 MiB, 16개 에어리어 — 가져오기는 항상 원자적: 실패해도 열린 코스를 덮어쓰지 않습니다
+- 잘못된 JSON/버전/참조는 구체적인 오류 코드(`malformed_json`, `invalid_reference` …)와 함께 거부
+
+## 🧱 기술 스택
+
+| 영역 | 선택 |
+| --- | --- |
+| 언어 | TypeScript (`strict`, `noUncheckedIndexedAccess`) |
+| 렌더링 | Canvas 2D — 256×240 논리 해상도, 픽셀 퍼펙트 스케일링 |
+| 시뮬레이션 | 고정 60Hz 스텝, 결정적 · DOM 비의존 (`src/game`) |
+| 오디오 | Web Audio API 실시간 칩튠 합성 |
+| 저장 | IndexedDB 트랜잭션 자동저장 + 파일 import/export |
+| 툴링 | Bun (dev/build/test) · Biome · Playwright 실브라우저 QA |
+| 런타임 의존성 | **없음** — 게임/UI 프레임워크 없이 순수 DOM + Canvas |
+
+```
+src/
+├── game/       고정스텝 시뮬레이션 (물리·충돌·적·아이템·골)
+├── editor/     편집 명령 · 히스토리 · 페인트 · 선택 · 에어리어
+├── level/      코스 스키마 · 검증 · 직렬화 · 카탈로그 · 샘플
+├── render/     픽셀 아트 아틀라스 · 씬 렌더러
+├── audio/      칩튠 스케줄러 · 악기 · 효과음
+├── storage/    IndexedDB · 자동저장 · 보관함 · 파일
+└── ui/         라이브러리 · 에디터 · 인스펙터 · HUD
+```
+
+## ✅ 개발
 
 ```bash
-bun run typecheck
-bun test
-bun run qa --scenario <id> --evidence <dir>
+bun test               # 단위/통합 테스트 (27개 스위트)
+bun run typecheck      # tsc --noEmit
+bun run diagnostics    # 코드 진단
+bun run qa --scenario all --evidence <dir>   # 실브라우저 QA 시나리오
+bun run scripts/screenshots.ts               # 이 README의 스크린샷 재생성
 ```
 
-`bun run typecheck`는 `tsc --noEmit`입니다. `bun run diagnostics`는 `scripts/qa/diagnostics.ts`를 실행합니다.
+모든 스크린샷은 실제 빌드된 앱에서 캡처했습니다. 재생성하려면 `bun run preview`를 띄운 뒤 위 스크립트를 실행하세요 (`PREVIEW_ORIGIN`으로 주소 지정 가능).
+
+## 📜 라이선스
+
+[MIT](LICENSE) — 코드와 이 저장소에서 직접 제작한 픽셀 아트/음악 데이터.
+
+> ⚠️ 이 프로젝트는 Nintendo와 무관한 비공식 팬 프로젝트입니다. *Super Mario Bros.* 관련 명칭·캐릭터의 모든 권리는 Nintendo에 있으며, 여기의 스프라이트와 음악은 ROM/원본 에셋이 아닌 **재해석된 오리지널 제작물**입니다. 상업적 사용은 권장하지 않습니다.
