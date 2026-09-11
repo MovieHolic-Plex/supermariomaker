@@ -3,10 +3,10 @@ import { PIXELS, ASSET_KEYS, WORLD_THEMES, WORLD_PALETTES } from "../src/assets/
 import { MANIFEST, ATLAS_SIZE, getFrame, frameAt, FRAME_SEQUENCES, THEME_BACKGROUNDS } from "../src/assets/manifest";
 import { rasterizeFrame, rasterizeAtlas } from "../src/render/assets";
 
-test("resolves all 112 frames with unique, in-bounds atlas rectangles", () => {
+test("resolves all 113 frames with unique, in-bounds atlas rectangles", () => {
   // Given all family imports; when resolving the manifest; then no frame is dropped or overlapped.
-  expect(ASSET_KEYS).toHaveLength(112);
-  expect(new Set(MANIFEST.map(f => f.key)).size).toBe(112);
+  expect(ASSET_KEYS).toHaveLength(113);
+  expect(new Set(MANIFEST.map(f => f.key)).size).toBe(113);
   for (const frame of MANIFEST) {
     const source = PIXELS[frame.key];
     expect([frame.width, frame.height]).toEqual([source.width, source.height]);
@@ -95,4 +95,10 @@ test("keeps Bullet's nonempty raster perimeter at least 3:1 against castle", () 
   // An empty or fully transparent raster must not vacuously satisfy the contrast check.
   expect(contrasts.length).toBeGreaterThan(0);
   expect(Math.min(...contrasts)).toBeGreaterThanOrEqual(3);
+});
+
+test("small swim pose is not a standing idle", () => {
+  expect(PIXELS["mario.small.swim1"].rows).not.toEqual(PIXELS["mario.small.idle"].rows);
+  expect(PIXELS["mario.small.swim2"].rows).not.toEqual(PIXELS["mario.small.swim1"].rows);
+  expect(PIXELS["mario.super.swim1"].rows).not.toEqual(PIXELS["mario.super.idle"].rows);
 });

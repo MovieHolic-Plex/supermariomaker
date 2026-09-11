@@ -63,7 +63,7 @@ export async function boot(evidence: string) {
     actions.push("click create-course");
     await view.click('[data-testid="create-course"]');
     assert.equal(await view.evaluate('document.querySelector("[data-testid=editor-canvas]")?.checkVisibility()'), true);
-    assert.equal(await view.evaluate('document.querySelector("main h1")?.textContent'), "첫 코스");
+    assert.equal(await view.evaluate('document.querySelector("[data-testid=course-title]")?.value'), "첫 코스");
     assert.equal(await view.evaluate('document.title'), "첫 코스 | 코스 메이커");
     assert.equal(await view.evaluate('document.querySelector("[data-testid=library]")'), null);
     await capture(view, `${evidence}/editor-1280.png`, viewport);

@@ -56,7 +56,7 @@ export function mountAssetGallery(root: HTMLElement): () => void {
   count.setAttribute("aria-live", "polite");
   controls.append(previous, select, next, count);
   const note = document.createElement("p");
-  note.textContent = "전체 112 프레임 · 4개 테마 · 원본 1x / 확대 4x · 숨김 블록은 편집 미리보기";
+  note.textContent = `전체 ${ASSET_KEYS.length} 프레임 · 4개 테마 · 원본 1x / 확대 4x · 숨김 블록은 편집 미리보기`;
   note.style.cssText = "font-size:12px;margin:0 0 8px;max-width:none;word-break:keep-all";
   const sheet = document.createElement("section");
   sheet.dataset["testid"] = "asset-sheet";

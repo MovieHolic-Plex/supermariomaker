@@ -5,6 +5,26 @@ import { boot } from "./qa/boot";
 import { bootError } from "./qa/boot-error";
 import { audioGallery, audioBlocked } from "./qa/audio";
 import { assetSheet, assetMissing } from "./qa/assets";
+import { fixtureLoad, fixtureReject } from "./qa/fixtures";
+import { movement, movementEdge } from "./qa/movement";
+import { blocks, blocksEdge } from "./qa/blocks";
+import { enemiesGround, enemiesGroundEdge } from "./qa/enemies-ground";
+import { editorShellScenario, editorFocusScenario } from "./qa/editor";
+import { platforms, platformsEdge } from "./qa/platforms";
+import { hazards, hazardsEdge } from "./qa/hazards";
+import { water, waterEdge } from "./qa/water";
+import { catalogInvalid, catalogScenario, paintHistory, paintHistoryEdge } from "./qa/paint";
+import { areas, areasEdge } from "./qa/areas";
+import { storage, storageFailure } from "./qa/storage";
+import { goals, goalsEdge } from "./qa/goals";
+import { selection, selectionEdge } from "./qa/selection";
+import { library, libraryConflict } from "./qa/library";
+import { playIsolation, playIsolationEdge } from "./qa/play-isolation";
+import { files, filesInvalid, schemaRoundtrip, schemaReject } from "./qa/files";
+import { samples, samplesInvalid } from "./qa/samples";
+import { capacity, capacityReject } from "./qa/capacity";
+import { polish, polishRegression } from "./qa/polish";
+import { builtFlow, builtFailure } from "./qa/built";
 import { assertPortFree, bounded, json, options, origin } from "./qa/support";
 
 const { scenarios, evidence: root } = options(Bun.argv.slice(2));
@@ -20,7 +40,6 @@ let preview: ReturnType<typeof Bun.spawn> | undefined;
 let previewExit: number | null = null;
 try {
   await assertPortFree();
-  // Rebuild every invocation, so a stale dist can never be accepted as QA proof.
   const build = Bun.spawn([process.execPath, "run", "build"], {
     stdout: Bun.file(`${evidence}/build.txt`), stderr: "pipe",
   });
@@ -78,6 +97,50 @@ try {
       case "audio-blocked": await audioBlocked(directory, origin); break;
       case "asset-sheet": await assetSheet(directory, origin); break;
       case "asset-missing": await assetMissing(directory, origin, "/app.js"); break;
+      case "fixture-load": await fixtureLoad(directory, origin); break;
+      case "fixture-reject": await fixtureReject(directory, origin); break;
+      case "movement": await movement(directory, origin); break;
+      case "movement-edge": await movementEdge(directory, origin); break;
+      case "blocks": await blocks(directory, origin); break;
+      case "blocks-edge": await blocksEdge(directory, origin); break;
+      case "enemies-ground": await enemiesGround(directory, origin); break;
+      case "enemies-ground-edge": await enemiesGroundEdge(directory, origin); break;
+      case "editor-shell": await editorShellScenario(directory, origin); break;
+      case "editor-focus": await editorFocusScenario(directory, origin); break;
+      case "platforms": await platforms(directory, origin); break;
+      case "platforms-edge": await platformsEdge(directory, origin); break;
+      case "hazards": await hazards(directory, origin); break;
+      case "hazards-edge": await hazardsEdge(directory, origin); break;
+      case "water": await water(directory, origin); break;
+      case "water-edge": await waterEdge(directory, origin); break;
+      case "paint-history": await paintHistory(directory, origin); break;
+      case "paint-history-edge": await paintHistoryEdge(directory, origin); break;
+      case "catalog": await catalogScenario(directory, origin); break;
+      case "catalog-invalid": await catalogInvalid(directory, origin); break;
+      case "areas": await areas(directory, origin); break;
+      case "areas-edge": await areasEdge(directory, origin); break;
+      case "storage": await storage(directory, origin); break;
+      case "storage-failure": await storageFailure(directory, origin); break;
+      case "goals": await goals(directory, origin); break;
+      case "goals-edge": await goalsEdge(directory, origin); break;
+      case "selection": await selection(directory, origin); break;
+      case "selection-edge": await selectionEdge(directory, origin); break;
+      case "library": await library(directory, origin); break;
+      case "library-conflict": await libraryConflict(directory, origin); break;
+      case "play-isolation": await playIsolation(directory, origin); break;
+      case "play-isolation-edge": await playIsolationEdge(directory, origin); break;
+      case "files": await files(directory, origin); break;
+      case "files-invalid": await filesInvalid(directory, origin); break;
+      case "schema-roundtrip": await schemaRoundtrip(directory, origin); break;
+      case "schema-reject": await schemaReject(directory, origin); break;
+      case "samples": await samples(directory, origin); break;
+      case "samples-invalid": await samplesInvalid(directory, origin); break;
+      case "capacity": await capacity(directory, origin); break;
+      case "capacity-reject": await capacityReject(directory, origin); break;
+      case "polish": await polish(directory, origin); break;
+      case "polish-regression": await polishRegression(directory, origin); break;
+      case "built-flow": await builtFlow(directory, origin); break;
+      case "built-failure": await builtFailure(directory, origin); break;
       default: { const exhaustive: never = scenario; throw new Error(`Unimplemented scenario: ${exhaustive}`); }
     }
     actions.push({ scenario, status: "PASS", evidence: directory });

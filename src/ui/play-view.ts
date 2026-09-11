@@ -1,0 +1,157 @@
+import { frameAt } from "../assets/manifest";
+import type { AssetKey } from "../assets/manifest";
+import { currentArea, runtimeViewport } from "../game/state";
+import type { Runtime } from "../game/state";
+import { shellWiggling } from "../game/shells";
+import { firebarBalls } from "../game/hazards";
+import { canvasContext, drawSprite } from "../render/assets";
+import { drawPole, renderScene } from "../render/renderer";
+import { drawWarpLabels, previewSprites, warpLabelMarks } from "./course-preview";
+
+const HAMMER_THROW_POSE = 52;
+
+/** Presentation derives only from authoritative state. It never feeds positions back to simulation. */
+export function playView(runtime: Runtime) {
+  const area = currentArea(runtime), player = runtime.player;
+  const viewport = runtimeViewport(runtime), camera = { x: viewport.x, y: viewport.y };
+  let key: AssetKey;
+  if (runtime.combat.defeated) key = "mario.small.death";
+  else if (runtime.ending.kind === "flag" && runtime.ending.phase === "slide") key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
+  else if (runtime.ending.kind === "flag") key = player.vx !== 0 ? frameAt(`mario.${player.form}.run`, runtime.tick, 6) : `mario.${player.form}.idle`;
+  else if (runtime.ending.kind === "castle") key = `mario.${player.form}.idle`;
+  else if (runtime.transition.kind === "pipe" && player.form !== "small") key = `mario.${player.form}.crouch`;
+  else if (runtime.climb.vineId !== null) key = frameAt(`mario.${player.form}.climb`, runtime.tick, 8);
+  else if (player.crouched && player.form !== "small") key = `mario.${player.form}.crouch`;
+  else if (area.source.theme === "underwater") key = frameAt(`mario.${player.form}.swim`, runtime.tick, 8);
+  else if (!player.grounded) key = `mario.${player.form}.jump`;
+  else if (player.skidding) key = `mario.${player.form}.skid`;
+  else if (player.vx !== 0) key = frameAt(`mario.${player.form}.run`, runtime.tick, 6);
+  else key = `mario.${player.form}.idle`;
+  const ground = [...runtime.ground.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId) return [];
+    let key: AssetKey;
+    let wiggling = false;
+    switch (actor.kind) {
+      case "goomba": case "buzzy": key = frameAt(`enemy.${actor.kind}.walk`, runtime.tick, 8); break;
+      case "koopa": key = frameAt(`enemy.koopa.${actor.color}.walk`, runtime.tick, 8); break;
+      case "paratroopa": key = frameAt(`enemy.koopa.${actor.color}.wings`, runtime.tick, 8); break;
+      case "shell":
+        key = actor.shell.occupant === "buzzy" ? "enemy.buzzy.shell" : `enemy.koopa.${actor.shell.occupant === "redKoopa" ? "red" : "green"}.shell`;
+        wiggling = shellWiggling(actor.shell); break;
+      case "defeated":
+        if (actor.previousKind !== "goomba" || actor.cause !== "stomp") return [];
+        key = "enemy.goomba.squashed"; break;
+    }
+    return [{ id: actor.id, key, x: actor.x + (actor.kind === "shell" && wiggling ? Math.floor(actor.shell.idleTicks / 4) % 2 * 2 - 1 : 0),
+      y: actor.y, flipX: actor.facing === 1, wiggling }];
+  });
+  const special = [...runtime.special.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "piranha":
+        if (actor.phase === "hide") return [];
+        key = frameAt("enemy.piranha.bite", runtime.tick, 8); break;
+      case "billCannon": key = "enemy.cannon"; break;
+      case "bulletBill": key = "enemy.bullet"; break;
+      case "hammerBro": key = actor.throwTicks > HAMMER_THROW_POSE ? "enemy.hammerBro.throw" : frameAt("enemy.hammerBro.walk", runtime.tick, 8); break;
+      case "hammer": key = "item.hammer"; break;
+      case "lakitu": key = actor.cooldown > 172 ? "enemy.lakitu.throw" : "enemy.lakitu.ride"; break;
+      case "spinyEgg": key = "enemy.spiny.egg"; break;
+      case "spiny": key = frameAt("enemy.spiny.walk", runtime.tick, 8); break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
+  const hazards = [...runtime.hazards.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId) return [];
+    if (actor.kind === "defeated") {
+      if (actor.previousKind !== "bowser" || actor.cause !== "fireball") return [];
+      return [{ id: actor.id, key: "enemy.bowser.defeated" as const, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+    }
+    if (actor.kind === "firebar") {
+      return firebarBalls(actor).map((ball, index) => ({ id: `${actor.id}:${index}`, key: "enemy.firebar" as AssetKey, x: ball.x, y: ball.y + 8, flipX: false }));
+    }
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "podoboo": key = actor.vy < 0 ? "enemy.podoboo.rise" : "enemy.podoboo.fall"; break;
+      case "bowser": key = actor.falling ? "enemy.bowser.walk1" : actor.flameTicks > 112 ? "enemy.bowser.openMouth" : frameAt("enemy.bowser.walk", runtime.tick, 8); break;
+      case "bowserFlame": key = "enemy.bowser.flame"; break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
+  const water = [...runtime.water.actors.values()].flatMap(actor => {
+    if (actor.areaId !== runtime.areaId || actor.kind === "defeated") return [];
+    let key: AssetKey;
+    switch (actor.kind) {
+      case "cheep": key = frameAt(`enemy.cheep.${actor.color}.swim`, runtime.tick, 8); break;
+      case "blooper": key = frameAt("enemy.blooper.swim", runtime.tick, 8); break;
+    }
+    return [{ id: actor.id, key, x: actor.x, y: actor.y, flipX: actor.facing === 1 }];
+  });
+  const platforms = area.platforms.bodies.flatMap(body => {
+    if (body.kind === "spring") {
+      return [{ id: body.id, key: (body.compressedAt !== null ? "decor.springCompressed" : "decor.springExtended") as AssetKey,
+        x: body.bounds.x + body.bounds.width / 2, y: body.bounds.y + body.bounds.height }];
+    }
+    const length = body.bounds.width / 16;
+    return Array.from({ length }, (_, cell) => ({ id: body.id, key: "decor.platform" as AssetKey,
+      x: body.bounds.x + cell * 16 + 8, y: body.bounds.y + body.bounds.height }));
+  });
+  return { camera, ground, special, hazards, water, platforms, overload: { enemies: runtime.special.overloadedEnemies, projectiles: runtime.special.overloadedProjectiles },
+    theme: area.source.theme, areaName: area.source.name, warpLabels: warpLabelMarks(runtime.course, area.source),
+    ending: runtime.ending, collapsedGoalIds: [...area.collapsedGoalIds],
+    player: { key, x: player.x, y: player.y, flipX: player.facing === -1 } };
+}
+export function renderPlay(canvas: HTMLCanvasElement, runtime: Runtime): void {
+  const area = currentArea(runtime), view = playView(runtime);
+  const objects = area.source.objects.filter(object => !runtime.ground.actors.has(object.id) && !runtime.special.actors.has(object.id)
+    && !runtime.hazards.actors.has(object.id) && !runtime.water.actors.has(object.id) && object.kind !== "platform" && object.kind !== "spring"
+    && object.kind !== "castleGoal");
+  renderScene(canvas, { ...view, sprites: [...previewSprites({ ...area.source, objects, tiles: [...area.tiles.values()] }, view.camera),
+    ...view.platforms, ...view.ground, ...view.special, ...view.hazards, ...view.water] });
+  const context = canvasContext(canvas), options = { theme: view.theme };
+  for (const object of area.source.objects) if (object.kind === "flagGoal") {
+    const x = object.x - view.camera.x, y = object.y - view.camera.y;
+    drawPole(context, { x, y, heightCells: object.props.height }, options);
+    const flagY = runtime.ending.kind === "flag" && runtime.ending.goalId === object.id
+      ? runtime.ending.flagY - view.camera.y
+      : y - object.props.height * 16 + 24;
+    drawSprite(context, { key: "decor.flag", x, y: flagY }, options);
+    drawSprite(context, { key: "decor.smallCastle", x: x + 48, y }, options);
+  }
+  for (const object of area.source.objects) if (object.kind === "castleGoal") {
+    const collapsed = area.collapsedGoalIds.includes(object.id);
+    if (!collapsed) {
+      const bridge = object.props.bridge;
+      for (let cell = 0; cell < bridge.width; cell++) {
+        drawSprite(context, { key: "decor.bridge", x: (bridge.x + cell) * 16 + 8 - view.camera.x, y: bridge.y * 16 + 16 - view.camera.y }, options);
+      }
+    }
+    if (runtime.ending.kind !== "castle" || runtime.ending.goalId !== object.id) {
+      drawSprite(context, { key: "decor.axe", x: object.x - view.camera.x, y: object.y - view.camera.y }, options);
+    }
+  }
+  for (const actor of runtime.items.actors) {
+    if (actor.areaId !== runtime.areaId) continue;
+    const x = actor.x - view.camera.x, y = actor.y - view.camera.y;
+    if (actor.kind === "vine") {
+      context.save(); context.beginPath(); context.rect(x - 8, y - actor.height, 16, actor.height); context.clip();
+      for (let offset = 0; offset < actor.height; offset += 16) drawSprite(context, { key: "decor.vineSegment", x, y: y - offset }, options);
+      if (actor.height > 0) drawSprite(context, { key: "decor.vineTop", x, y: y - actor.height + 16 }, options);
+      context.restore();
+    } else {
+      const key: AssetKey = actor.kind === "star" ? frameAt("item.star", runtime.tick) : actor.kind === "fireball" ? "item.fireball" : `item.${actor.kind}`;
+      context.save();
+      if (actor.emerging > 0) { context.beginPath(); context.rect(x - 8, y - 32, 16, 32 - actor.emerging); context.clip(); }
+      drawSprite(context, { key, x, y }, options); context.restore();
+    }
+  }
+  if (runtime.combat.invulnerabilityTicks === 0 || runtime.tick % 6 < 3) {
+    context.save();
+    if (runtime.combat.starTicks > 0) context.filter = `hue-rotate(${Math.floor(runtime.tick / 4) % 6 * 60}deg)`;
+    drawSprite(context, { ...view.player, x: view.player.x - view.camera.x, y: view.player.y - view.camera.y }, options);
+    context.restore();
+  }
+  drawWarpLabels(context, runtime.course, area.source, view.camera);
+  canvas.style.width = "512px"; canvas.style.height = "480px";
+}

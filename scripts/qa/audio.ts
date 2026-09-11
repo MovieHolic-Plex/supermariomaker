@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { chromium } from "playwright-core";
 import type { Page } from "playwright-core";
 import { audioKeys, effectKeys, musicKeys, SCORES } from "../../src/assets/music";
-import { bounded, json } from "./support";
+import { bounded, closeOwnedBrowser, json } from "./support";
 
 // Installed only in isolated QA contexts. Observes the real gallery and browser
 // lifecycle; there are no setters, fake sound nodes, or success hooks in the app.
@@ -162,8 +162,10 @@ async function scenario(evidence: string, origin: string, mode: "none" | "constr
     assert.deepEqual(errors, []);
     actions.push("PASS all scenario assertions");
   } finally {
-    await json(`${evidence}/versions.json`, { browser: browser.version(), driver: "playwright-core", bun: Bun.version, url: page.url(), viewport: page.viewportSize() });
-    await context.close(); await browser.close(); closed = !browser.isConnected();
+    try {
+      await json(`${evidence}/versions.json`, { browser: browser.version(), driver: "playwright-core", bun: Bun.version, url: page.isClosed() ? null : page.url(), viewport: page.isClosed() ? null : page.viewportSize() });
+    } catch { await json(`${evidence}/versions.json`, { driver: "playwright-core", bun: Bun.version, pageClosed: true }); }
+    await closeOwnedBrowser(browser); closed = !browser.isConnected();
     await Promise.all([json(`${evidence}/actions.json`, actions), json(`${evidence}/errors.json`, { errors, consoleLog }), json(`${evidence}/cleanup.json`, { browserClosed: closed, isolatedContextClosed: true, userProfileTouched: false, gallery: cleanup })]);
     assert(closed); assert.deepEqual(errors, []);
   }

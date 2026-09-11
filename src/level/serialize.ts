@@ -3,7 +3,7 @@ import { validateCourse } from "./validate";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const tooLarge = { ok: false, error: { code: "file_too_large", path: "$", message: "Course files may not exceed 32 MiB of UTF-8" } } as const;
+const tooLarge = { ok: false, error: { code: "file_too_large", path: "$", message: "코스 파일은 UTF-8 기준 32 MiB를 넘을 수 없습니다." } } as const;
 
 /** Decode bytes strictly and validate the whole replacement before returning it. */
 export function parseCourse(input: string | Uint8Array): ValidationResult<CourseV1> {
@@ -12,13 +12,13 @@ export function parseCourse(input: string | Uint8Array): ValidationResult<Course
   let text: string;
   try { text = typeof input === "string" ? input : decoder.decode(bytes); }
   catch (error) {
-    if (error instanceof TypeError) return { ok: false, error: { code: "invalid_utf8", path: "$", message: "File is not valid UTF-8" } };
+    if (error instanceof TypeError) return { ok: false, error: { code: "invalid_utf8", path: "$", message: "파일이 올바른 UTF-8이 아닙니다." } };
     throw error;
   }
   let parsed: unknown;
   try { parsed = JSON.parse(text); }
   catch (error) {
-    if (error instanceof SyntaxError) return { ok: false, error: { code: "malformed_json", path: "$", message: "File is not valid JSON" } };
+    if (error instanceof SyntaxError) return { ok: false, error: { code: "malformed_json", path: "$", message: "파일이 올바른 JSON이 아닙니다." } };
     throw error;
   }
   return validateCourse(parsed);
